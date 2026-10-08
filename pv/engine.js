@@ -20,8 +20,6 @@
   const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
   const SCENES = [];
-  // pulse windows (high-energy parts of the track)
-  const PULSE = [];
 
   function scene(t0, t1, bg, html, opts = {}) {
     SCENES.push({ t0, t1, bg, html, o: opts });
@@ -131,26 +129,27 @@
     root.innerHTML = `<div class="bgwrap">${bgHTML(s.bg)}</div><div class="content">${s.html}</div>`;
     layers = [...root.querySelectorAll('.tx')];
     anims = [];
-    root.querySelectorAll('[data-in],[data-out],[data-drift],[data-rot],[data-pulse],[data-count],[data-fall],[data-loop]').forEach((el, n) => {
+    root.querySelectorAll('[data-in],[data-out],[data-drift],[data-rot],[data-count],[data-fall],[data-loop]').forEach((el, n) => {
       const a = { el, n, inn: parseSpec(el.dataset.in), out: parseSpec(el.dataset.out) };
       if (a.inn) {
         const t = a.inn.type;
         if (t === 'chars') a.targets = splitChars(el);
         else if (t.startsWith('kids-')) { a.targets = [...el.children]; a.kidType = t.slice(5); }
         else if (t === 'draw') {
-          a.targets = [...el.querySelectorAll('path,circle,rect,line,polyline,polygon,ellipse')].filter((g) => g.getAttribute('stroke') !== 'none');
+          const geo = [...el.querySelectorAll('path,circle,rect,line,polyline,polygon,ellipse')].filter((g) => g.getAttribute('stroke') !== 'none' && !g.closest('defs'));
+          // dashed strokes keep their pattern: they fade in with the fills instead of being line-drawn
+          a.targets = geo.filter((g) => !g.hasAttribute('stroke-dasharray'));
           a.targets.forEach((g) => {
             let len = 1000;
             try { len = g.getTotalLength(); } catch (e) { /* not measurable */ }
             g.style.strokeDasharray = `${len}`;
             g._len = len;
           });
-          a.fills = [...el.querySelectorAll('[data-fill]')];
+          a.fills = [...el.querySelectorAll('[data-fill]'), ...geo.filter((g) => g.hasAttribute('stroke-dasharray'))];
         } else if (t === 'type') { a.full = el.textContent; }
       }
       if (el.dataset.drift) a.drift = el.dataset.drift.split(/\s+/).map(Number);
       if (el.dataset.rot) a.rot = +el.dataset.rot;
-      if (el.dataset.pulse !== undefined) a.pulse = +(el.dataset.pulse || 0.05);
       if (el.dataset.count) { const [to, d, dur] = el.dataset.count.split(/\s+/).map(Number); a.count = { to, d, dur, suffix: el.dataset.suffix || '' }; }
       if (el.dataset.fall) { const [from, d, dur] = el.dataset.fall.split(/\s+/).map(Number); a.fall = { from, d, dur }; }
       if (el.dataset.loop) { const [kind, period, amp] = el.dataset.loop.split(/\s+/); a.loop = { kind, period: +period, amp: +(amp || 1) }; }
@@ -169,10 +168,10 @@
       case 'down': r.o = e; r.ty = -(1 - e) * 50; break;
       case 'left': r.o = e; r.tx = (1 - x) * 120; break;
       case 'right': r.o = e; r.tx = -(1 - x) * 120; break;
-      case 'zoom': r.o = e; r.sc = 1 + (1 - e) * 0.22; break;
-      case 'zoomin': r.o = e; r.sc = 0.82 + 0.18 * e; break;
-      case 'slam': r.o = Math.min(1, p * 6); r.sc = 1 + (1 - x) * 0.75; r.bl = (1 - x) * 16; break;
-      case 'slamsmall': r.o = Math.min(1, p * 6); r.sc = 1 + (1 - x) * 0.25; r.bl = (1 - x) * 8; break;
+      case 'zoom': r.o = e; r.sc = 1 + (1 - e) * 0.05; r.bl = (1 - e) * 6; break;
+      case 'zoomin': r.o = e; break;
+      case 'slam': r.o = Math.min(1, p * 5); r.sc = 1 + (1 - x) * 0.12; r.bl = (1 - x) * 14; break;
+      case 'slamsmall': r.o = Math.min(1, p * 5); r.sc = 1 + (1 - x) * 0.05; r.bl = (1 - x) * 8; break;
       case 'blur': r.o = e; r.bl = (1 - e) * 18; break;
       case 'wipeR': r.clip = `inset(-10% ${(1 - x) * 100}% -10% -2%)`; break;
       case 'wipeL': r.clip = `inset(-10% -2% -10% ${(1 - x) * 100}%)`; break;
@@ -180,7 +179,7 @@
       case 'wipeU': r.clip = `inset(${(1 - x) * 100}% -10% -2% -10%)`; break;
       case 'sx': r.sx = x; break;
       case 'sy': r.sy = x; break;
-      case 'pop': r.o = Math.min(1, p * 4); r.sc = p < 1 ? 0.5 + 0.5 * backOut(p) : 1; break;
+      case 'pop': r.o = e; r.ty = (1 - x) * 24; break;
       case 'flick': r.o = p >= 1 ? 1 : (hash(Math.floor(p * 14) + seed * 7.3) > 0.45 ? 1 : 0.12) * Math.min(1, p * 3); break;
       case 'track': r.o = e; r.ls = 1 - e; break; // letter-spacing expands from +x
       case 'none': break;
@@ -197,16 +196,6 @@
     if (r.clip) el.style.clipPath = r.clip; else if (el.style.clipPath) el.style.clipPath = '';
   }
 
-  function pulseAt(t) {
-    for (const [a, b] of PULSE) {
-      if (t >= a && t < b) {
-        const since = ((t - B0) % SPB + SPB) % SPB;
-        return Math.exp(-since * 9);
-      }
-    }
-    return 0;
-  }
-
   function renderAt(t) {
     let i = SCENES.findIndex((s) => t >= s.t0 && t < s.t1);
     if (i < 0) i = SCENES.length - 1;
@@ -215,36 +204,35 @@
     const lt = t - s.t0;
     const D = s.t1 - s.t0;
     const frame = Math.round(t * FPS);
-    const pv = pulseAt(t);
+    // short scenes play their entrance animations faster so everything lands before the cut
+    const ts = D < 1.2 ? Math.max(0.45, D / 1.3) : 1;
+    const la = lt / ts;
 
     for (const a of anims) {
       const el = a.el;
       const extra = { tx: 0, ty: 0, sc: 1, rot: 0, o: 1 };
       if (a.drift) { extra.tx += a.drift[0] * lt / D; extra.ty += a.drift[1] * lt / D; if (a.drift[2]) extra.sc *= 1 + a.drift[2] * lt / D; }
       if (a.rot) extra.rot += a.rot * lt;
-      if (a.pulse) extra.sc *= 1 + a.pulse * pv;
-      if (a.fall) { const p = clamp01((lt - a.fall.d) / a.fall.dur); extra.ty += a.fall.from * (1 - easeIn(p)); }
+      if (a.fall) { const p = clamp01((la - a.fall.d) / a.fall.dur); extra.ty += a.fall.from * (1 - easeIn(p)); }
       if (a.loop) {
         const ph = (lt / a.loop.period) % 1;
         if (a.loop.kind === 'slide') { extra.tx += (ph - 0.5) * a.loop.amp; extra.o = Math.sin(ph * Math.PI); }
-        if (a.loop.kind === 'ripple') { extra.sc *= 0.4 + ph * a.loop.amp; extra.o = 1 - ph; }
         if (a.loop.kind === 'rain') { extra.ty += ph * a.loop.amp; extra.o = Math.sin(ph * Math.PI); }
         if (a.loop.kind === 'blink') { extra.o = ph < 0.5 ? 1 : 0.2; }
-        if (a.loop.kind === 'eq') { extra.sc = 1; el.style.transformOrigin = '50% 100%'; const v = 0.25 + 0.75 * Math.abs(Math.sin(lt * a.loop.amp + a.n * 1.7)) * (0.6 + 0.4 * pv); el.style.transform = `scaleY(${v.toFixed(3)})`; continue; }
       }
       if (a.out) {
         const p = clamp01((lt - (D - a.out.d)) / a.out.dur);
         extra.o *= 1 - easeOut(p);
       }
       if (a.count) {
-        const p = easeOut(clamp01((lt - a.count.d) / a.count.dur));
+        const p = easeOut(clamp01((la - a.count.d) / a.count.dur));
         el.textContent = Math.round(a.count.to * p) + a.count.suffix;
       }
       const inn = a.inn;
       if (!inn) { applyStyle(el, styleFor('none', 1, a.n), extra); continue; }
       if (inn.type === 'chars') {
         a.targets.forEach((c, k) => {
-          const p = clamp01((lt - inn.d - k * inn.st) / inn.dur);
+          const p = clamp01((la - inn.d - k * inn.st) / inn.dur);
           const e = easeOut(p);
           c.style.opacity = e.toFixed(3);
           c.style.filter = p < 1 ? `blur(${((1 - e) * 10).toFixed(2)}px)` : '';
@@ -252,34 +240,32 @@
         applyStyle(el, styleFor('none', 1, a.n), extra);
       } else if (a.kidType) {
         a.targets.forEach((c, k) => {
-          const p = clamp01((lt - inn.d - k * inn.st) / inn.dur);
+          const p = clamp01((la - inn.d - k * inn.st) / inn.dur);
           applyStyle(c, styleFor(a.kidType, p, a.n + k), {});
         });
         applyStyle(el, styleFor('none', 1, a.n), extra);
       } else if (inn.type === 'draw') {
-        const p = clamp01((lt - inn.d) / inn.dur);
+        const p = clamp01((la - inn.d) / inn.dur);
         const e = easeInOut(p);
         a.targets.forEach((g) => { g.style.strokeDashoffset = `${(g._len * (1 - e)).toFixed(2)}`; });
         a.fills.forEach((f) => { f.style.opacity = clamp01((p - 0.55) / 0.45).toFixed(3); });
         applyStyle(el, styleFor('fade', Math.min(1, p * 8), a.n), extra);
       } else if (inn.type === 'type') {
-        const p = clamp01((lt - inn.d) / inn.dur);
+        const p = clamp01((la - inn.d) / inn.dur);
         const n = Math.round(a.full.length * p);
         el.textContent = a.full.slice(0, n) + (p < 1 && p > 0 ? '▍' : '');
         applyStyle(el, styleFor('none', 1, a.n), { ...extra, o: extra.o * (p > 0 ? 1 : 0) });
       } else {
-        const p = clamp01((lt - inn.d) / inn.dur);
+        const p = clamp01((la - inn.d) / inn.dur);
         const r = styleFor(inn.type, p, a.n);
         if (r.ls !== null) el.style.letterSpacing = `calc(var(--ls, .1em) + ${(r.ls * 0.8).toFixed(3)}em)`;
         applyStyle(el, r, extra);
       }
     }
 
-    // background drift + camera push
+    // background texture drift (translation only — no zooming)
     layers.forEach((l, k) => { l.style.transform = `translate(${(-lt * (6 + k * 3)).toFixed(2)}px,${(lt * (k % 2 ? 2 : -2)).toFixed(2)}px)`; });
-    const zoom = s.o.zoom === undefined ? 0.035 : s.o.zoom;
-    const camSc = 1 + zoom * (lt / D) + (s.o.pulse ? 0.012 * pv : 0);
-    root.querySelector('.content').style.transform = `scale(${camSc.toFixed(4)})`;
+    root.querySelector('.content').style.transform = '';
 
     // fades
     let fade = 0;
@@ -337,6 +323,6 @@
     return issues;
   }
 
-  window.PV = { FPS, DUR, SPB, B0, beat, bar, scene, SCENES, PULSE, validate, hash };
+  window.PV = { FPS, DUR, SPB, B0, beat, bar, scene, SCENES, validate, hash };
   window.renderAt = renderAt;
 })();
