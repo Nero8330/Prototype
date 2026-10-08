@@ -87,7 +87,7 @@ try {
       '-ss', '0', '-t', String(DUR), '-i', bgm,
       '-filter_complex', `[1:a]atrim=0:${DUR},afade=t=out:st=${(DUR - 1.4).toFixed(2)}:d=1.4[a]`,
       '-map', '0:v', '-map', '[a]',
-      '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', '-r', String(FPS),
+      '-c:v', 'libx264', '-preset', 'slow', '-crf', '21', '-pix_fmt', 'yuv420p', '-r', String(FPS),
       '-c:a', 'aac', '-b:a', '256k', '-t', String(DUR), '-movflags', '+faststart', out], { stdio: 'inherit' });
     const code = await new Promise((r) => ff.on('close', r));
     fs.rmSync(tmp, { recursive: true, force: true });
