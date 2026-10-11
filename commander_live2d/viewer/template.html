@@ -1,0 +1,726 @@
+<title>指揮官 Live2Dプレビュー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Shippori+Mincho+B1:wght@700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: editor-style split, stage (canvas) left, control column right; stacks on phones. */
+:root {
+  --bg: #eeece8;
+  --panel: #f8f7f4;
+  --ink: #22201f;
+  --muted: #6a6360;
+  --line: #d8d2cc;
+  --accent: #8d6427;
+  --accent-ink: #fffaf0;
+  --accent-soft: #efe2c8;
+  --crimson: #8a2d35;
+  --stage-a: #dedbd5;
+  --stage-b: #c9c4bd;
+  --stage-grid: rgba(60, 50, 40, 0.06);
+  --font-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --font-ui: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #19181a; --panel: #212022; --ink: #ece7e1; --muted: #a49d97; --line: #3a3638;
+    --accent: #e2bb7c; --accent-ink: #20190f; --accent-soft: #3d3221; --crimson: #db7a82;
+    --stage-a: #5a585d; --stage-b: #3f3d42; --stage-grid: rgba(255, 255, 255, 0.05);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #19181a; --panel: #212022; --ink: #ece7e1; --muted: #a49d97; --line: #3a3638;
+  --accent: #e2bb7c; --accent-ink: #20190f; --accent-soft: #3d3221; --crimson: #db7a82;
+  --stage-a: #5a585d; --stage-b: #3f3d42; --stage-grid: rgba(255, 255, 255, 0.05);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.6; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100%; }
+.stage { position: relative; min-width: 0; min-height: 0; overflow: hidden;
+  background:
+    linear-gradient(var(--stage-grid) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, var(--stage-grid) 1px, transparent 1px) 0 0 / 32px 32px,
+    radial-gradient(120% 90% at 50% 20%, var(--stage-a), var(--stage-b)); }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.stage-bar { position: absolute; left: 16px; right: 16px; bottom: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; pointer-events: none; }
+.stage-bar > * { pointer-events: auto; }
+.seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button, .chip { font: inherit; font-size: 12.5px; color: var(--ink); background: transparent; border: 0; border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.chip { background: var(--panel); border: 1px solid var(--line); }
+.chip:hover { border-color: var(--accent); }
+.hint { font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--panel) 80%, transparent); border-radius: 6px; padding: 2px 8px; }
+.status { position: absolute; top: 14px; left: 16px; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); background: color-mix(in srgb, var(--panel) 75%, transparent); padding: 2px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.panel { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 22px 20px 28px; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.head { display: flex; flex-direction: column; gap: 2px; }
+.eyebrow { font-size: 11px; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; }
+h1 { font-family: var(--font-display); font-size: 30px; line-height: 1.2; margin: 0; letter-spacing: 0.04em; text-wrap: balance; }
+.sub { margin: 0; color: var(--muted); font-size: 13px; }
+section h2 { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; color: var(--muted); margin: 0 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
+section h2 span { font-family: var(--font-mono); font-weight: 400; letter-spacing: 0; color: var(--accent); }
+.expr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.expr button { font: inherit; text-align: left; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+.expr button b { font-size: 14.5px; font-weight: 700; }
+.expr button small { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.expr button:hover { border-color: var(--accent); }
+.expr button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.toggles { display: flex; flex-direction: column; gap: 2px; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--line); cursor: pointer; }
+.toggle:last-child { border-bottom: 0; }
+.toggle span small { display: block; color: var(--muted); font-size: 11.5px; }
+.toggle input { appearance: none; width: 34px; height: 20px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; flex: none; transition: background .15s; margin: 0; }
+.toggle input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); transition: transform .15s; }
+.toggle input:checked { background: var(--accent); }
+.toggle input:checked::after { transform: translateX(14px); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { font: inherit; font-size: 13px; background: var(--ink); color: var(--panel); border: 0; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn:hover { opacity: .88; }
+details > summary { cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; color: var(--muted); list-style: none; display: flex; justify-content: space-between; }
+details > summary::after { content: "＋"; font-weight: 400; }
+details[open] > summary::after { content: "－"; }
+.params { display: flex; flex-direction: column; gap: 9px; margin-top: 12px; }
+.param { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: baseline; }
+.param label { font-size: 13px; }
+.param label code { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); margin-left: 4px; }
+.param output { font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.param.pinned output { color: var(--crimson); }
+.param input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+.note { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; margin: 0; }
+.note b { color: var(--ink); font-weight: 500; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--ink); }
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; height: auto; }
+  .stage { height: 72svh; min-height: 420px; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; padding-inline: 16px; }
+  .stage-bar { left: 12px; right: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .toggle input, .toggle input::after { transition: none; } }
+</style>
+
+<main class="app">
+  <section class="stage" aria-label="キャラクタープレビュー">
+    <canvas id="gl"></canvas>
+    <div class="status" id="status">読み込み中…</div>
+    <div class="stage-bar">
+      <div class="seg" role="group" aria-label="表示範囲">
+        <button type="button" id="viewBust" aria-pressed="true">バストアップ</button>
+        <button type="button" id="viewFull" aria-pressed="false">全身</button>
+      </div>
+      <span class="hint" id="hint">画面をなぞると視線と顔が追従します</span>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="head">
+      <span class="eyebrow">Live2D rig preview</span>
+      <h1>指揮官</h1>
+      <p class="sub">43パーツに分割したPSDを、メッシュ変形と物理演算で動かしています。</p>
+    </div>
+
+    <section aria-labelledby="exprTitle">
+      <h2 id="exprTitle">表情 <span id="exprName">通常</span></h2>
+      <div class="expr" id="expr"></div>
+    </section>
+
+    <section aria-labelledby="motionTitle">
+      <h2 id="motionTitle">動き</h2>
+      <div class="toggles">
+        <label class="toggle"><span>視線・顔の追従<small>マウスやタッチの位置を見る</small></span><input type="checkbox" id="optFollow" checked></label>
+        <label class="toggle"><span>自動まばたき</span><input type="checkbox" id="optBlink" checked></label>
+        <label class="toggle"><span>呼吸</span><input type="checkbox" id="optBreath" checked></label>
+        <label class="toggle"><span>髪・飾緒の物理演算<small>前髪、横髪4房、後ろ髪、飾緒</small></span><input type="checkbox" id="optPhysics" checked></label>
+        <label class="toggle"><span>口パク<small>話しているように口を開閉</small></span><input type="checkbox" id="optTalk"></label>
+        <label class="toggle"><span>メッシュを表示</span><input type="checkbox" id="optMesh"></label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button type="button" class="btn" id="shake">頭を振る</button>
+        <button type="button" class="btn ghost" id="bow">うなずく</button>
+      </div>
+    </section>
+
+    <details id="paramBox">
+      <summary>パラメータ</summary>
+      <div class="params" id="params"></div>
+      <div class="row" style="margin-top:12px"><button type="button" class="btn ghost" id="unpin">固定を解除</button></div>
+    </details>
+
+    <p class="note">スライダーを動かした値は固定され、赤で表示されます。表情は Cubism の <b>.exp3.json</b> と同じパラメーター値で定義しています。</p>
+  </aside>
+</main>
+
+<script>
+"use strict";
+const DATA = /*@@DATA@@*/null;
+
+// ------------------------------------------------------------------ parameters
+const PARAM_DEFS = [
+  ["ParamAngleX", "顔 左右", -30, 30, 0],
+  ["ParamAngleY", "顔 上下", -30, 30, 0],
+  ["ParamAngleZ", "顔 傾き", -30, 30, 0],
+  ["ParamBodyAngleX", "体 左右", -10, 10, 0],
+  ["ParamEyeOpen", "目 開閉", 0, 1.2, 1],
+  ["ParamEyeSmile", "目 笑顔", 0, 1, 0],
+  ["ParamEyeBallX", "視線 X", -1, 1, 0],
+  ["ParamEyeBallY", "視線 Y", -1, 1, 0],
+  ["ParamEyeBallForm", "瞳 収縮", -1, 0, 0],
+  ["ParamBrowY", "眉 上下", -1, 1, 0],
+  ["ParamBrowAngle", "眉 角度", -1, 1, 0],
+  ["ParamMouthForm", "口 変形", -1, 1, 0],
+  ["ParamMouthOpenY", "口 開閉", 0, 1, 0],
+  ["ParamMouthShy", "口 波線", 0, 1, 0],
+  ["ParamCheek", "照れ", 0, 1, 0],
+  ["ParamSweat", "汗", 0, 1, 0],
+];
+const DEF = Object.fromEntries(PARAM_DEFS.map(d => [d[0], d[4]]));
+const pinned = {};
+
+// Expression presets from tools/expressions.json (also written as cubism/expressions/*.exp3.json)
+const EXPRESSIONS = /*@@EXPR@@*/[];
+
+// ------------------------------------------------------------------ rig
+const W = DATA ? DATA.width : 800, H = DATA ? DATA.height : 2000;
+const HEAD_C = { x: 417, y: 262 }, HEAD_R = { x: 92, y: 118, z: 58 };
+const NECK = { x: 418, y: 352 };
+const HIP = { x: 418, y: 1150 };
+const CLOSE_R = bezierLUT([437.5, 252.5], [465, 263.5], [495.5, 249.0]);  // closed-eye line
+const CLOSE_L = CLOSE_R.map(([x, y]) => [834 - x, y]).reverse();
+
+function bezierLUT(p0, p1, p2) {
+  const out = [];
+  for (let i = 0; i <= 48; i++) {
+    const t = i / 48, u = 1 - t;
+    out.push([u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]]);
+  }
+  return out;
+}
+function lutY(lut, x) {
+  if (x <= lut[0][0]) return lut[0][1];
+  for (let i = 1; i < lut.length; i++) {
+    if (x <= lut[i][0]) {
+      const [x0, y0] = lut[i - 1], [x1, y1] = lut[i];
+      return y0 + (y1 - y0) * (x - x0) / (x1 - x0 || 1);
+    }
+  }
+  return lut[lut.length - 1][1];
+}
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// role of each part: region (head / neck / body / legs), depth for the head turn,
+// hair physics channel, eye side, etc.
+function roleOf(p) {
+  const n = p.name, r = { region: "head", z: 0 };
+  if (n === "脚") return { region: "legs" };
+  if (["裾裏", "上半身", "襟_シャツ_ネクタイ"].includes(n)) return { region: "body" };
+  if (n === "飾緒") return { region: "body", hair: "aig" };
+  if (n === "首") return { region: "neck" };
+  // Neighbouring hair strands and the hat share one depth so a head turn moves
+  // them together; only the physics separates them.
+  if (n === "後ろ髪") return { region: "head", z: -3, hair: "back" };
+  if (n === "前髪") return { region: "head", z: 8, hair: "front" };
+  if (n.startsWith("横髪")) {
+    const left = n.includes("左"), inner = n.endsWith("内");
+    return { region: "head", z: 8, hair: (left ? "L" : "R") + (inner ? "in" : "out") };
+  }
+  if (n === "帽子") return { region: "head", z: 8 };
+  if (n === "鼻") return { region: "head", z: 7 };
+  if (n.startsWith("口_")) return { region: "head", z: 3, mouth: n.slice(2) };
+  if (n === "頬染め") return { region: "head", z: 2, cheek: true };
+  if (n === "汗") return { region: "head", z: 10, sweat: true };
+  if (n === "右眉" || n === "左眉") return { region: "head", z: 5, brow: n[0] === "右" ? "R" : "L" };
+  const m = n.match(/^(右|左)目_(.+)$/);
+  if (m) return { region: "head", z: 3, eye: m[1] === "右" ? "R" : "L", piece: m[2] };
+  return r;
+}
+
+// hair chains: root (art px), length, stiffness, damping, gain
+const HAIR = {
+  front: { root: [402, 196], len: 95, k: 70, c: 5.4, g: 0.8, amp: 0.7, wind: 0.6 },
+  Lout: { root: [298, 168], len: 200, k: 38, c: 3.4, g: 1.0, amp: 1.0, wind: 1.0 },
+  Lin: { root: [330, 190], len: 190, k: 46, c: 3.8, g: 1.0, amp: 1.0, wind: 0.9 },
+  Rin: { root: [486, 192], len: 150, k: 52, c: 4.2, g: 1.0, amp: 1.0, wind: 0.8 },
+  Rout: { root: [526, 170], len: 175, k: 40, c: 3.5, g: 1.0, amp: 1.0, wind: 1.1 },
+  back: { root: [417, 175], len: 180, k: 30, c: 4.0, g: 0.6, amp: 0.5, wind: 0.5 },
+  aig: { root: [242, 432], len: 215, k: 26, c: 2.6, g: 1.2, amp: 1.0, wind: 0.4 },
+};
+for (const [key, h] of Object.entries(HAIR)) {
+  h.theta = 0; h.omega = 0; h.prev = null; h.vel = 0; h.acc = 0; h.phase = key.length * 1.7 + h.root[0] * 0.01;
+}
+
+// ------------------------------------------------------------------ state
+const S = {
+  t: 0, view: "bust", viewRect: null, mouse: null, lastMove: -10,
+  follow: { x: 0, y: 0, vx: 0, vy: 0 }, blink: { next: 1.5, t: -1, double: false },
+  expr: {}, exprTarget: {}, exprIndex: 0, shake: -10, bow: -10, mesh: false,
+};
+const opt = {};
+let P = { ...DEF };
+
+// ------------------------------------------------------------------ WebGL
+const canvas = document.getElementById("gl");
+const statusEl = document.getElementById("status");
+let gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, stencil: true, antialias: true });
+const GL2 = !!gl;
+if (!gl) gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: true, stencil: true, antialias: true });
+
+const VS = `attribute vec2 a_pos; attribute vec2 a_uv; uniform vec4 u_view; varying vec2 v_uv;
+void main(){ v_uv = a_uv; gl_Position = vec4(a_pos * u_view.xy + u_view.zw, 0.0, 1.0); }`;
+const FS = `precision mediump float; uniform sampler2D u_tex; uniform float u_opacity; uniform float u_alphaTest;
+varying vec2 v_uv;
+void main(){ vec4 c = texture2D(u_tex, v_uv) * u_opacity; if (c.a < u_alphaTest) discard; gl_FragColor = c; }`;
+const LFS = `precision mediump float; uniform vec4 u_color; void main(){ gl_FragColor = u_color; }`;
+
+function program(vs, fs) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.bindAttribLocation(p, 0, "a_pos"); gl.bindAttribLocation(p, 1, "a_uv");
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+const parts = [];
+let prog, lineProg, U = {}, LU = {};
+
+function buildMesh(p) {
+  const r = p.role;
+  const step = r.eye || r.mouth ? 3 : r.brow ? 6 : r.hair ? 8 : (p.w * p.h > 120000 ? 26 : 14);
+  const cols = clamp(Math.round(p.w / step), 2, 48), rows = clamp(Math.round(p.h / step), 2, 64);
+  const n = (cols + 1) * (rows + 1);
+  const rest = new Float32Array(n * 2), uv = new Float32Array(n * 2);
+  for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) {
+    const k = j * (cols + 1) + i;
+    rest[k * 2] = p.x + p.w * i / cols; rest[k * 2 + 1] = p.y + p.h * j / rows;
+    uv[k * 2] = i / cols; uv[k * 2 + 1] = j / rows;
+  }
+  const idx = [], lines = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const a = j * (cols + 1) + i, b = a + 1, c = a + cols + 1, d = c + 1;
+    idx.push(a, b, c, b, d, c);
+    lines.push(a, b, a, c, b, c);
+    if (i === cols - 1) lines.push(b, d);
+    if (j === rows - 1) lines.push(c, d);
+  }
+  p.rest = rest; p.pos = new Float32Array(rest); p.count = idx.length; p.lineCount = lines.length;
+  p.posBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, p.posBuf); gl.bufferData(gl.ARRAY_BUFFER, rest, gl.DYNAMIC_DRAW);
+  p.uvBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, p.uvBuf); gl.bufferData(gl.ARRAY_BUFFER, uv, gl.STATIC_DRAW);
+  p.idxBuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, p.idxBuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+  p.lineBuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, p.lineBuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(lines), gl.STATIC_DRAW);
+}
+
+function loadTexture(p) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      p.tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, p.tex);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      if (GL2) { gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); }
+      else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      resolve();
+    };
+    img.onerror = reject;
+    img.src = p.src;
+  });
+}
+
+// ------------------------------------------------------------------ deformation
+let F = {};  // per-frame derived values
+
+function headPoint(x, y, z, out) {
+  const dx = x - HEAD_C.x, dy = y - HEAD_C.y;
+  const nx = dx / HEAD_R.x, ny = dy / HEAD_R.y;
+  const zs = HEAD_R.z * Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny)) + z;
+  const x1 = dx * F.cyaw + zs * F.syaw, z1 = -dx * F.syaw + zs * F.cyaw;
+  const y1 = dy * F.cpit - z1 * F.spit;
+  const X = HEAD_C.x + x1 - NECK.x, Y = HEAD_C.y + y1 - NECK.y;
+  out[0] = NECK.x + X * F.croll - Y * F.sroll;
+  out[1] = NECK.y + X * F.sroll + Y * F.croll;
+}
+
+function bodyPoint(x, y, out, legs) {
+  // breathing: chest and shoulders rise
+  const up = smooth(980, 420, y);
+  let X = x + (x - 418) * 0.006 * F.breath * up;
+  let Y = y - F.breath * 2.6 * up;
+  // body sway: lean around the hips, feet stay planted
+  const w = legs ? smooth(1950, 1150, y) * 0.6 : 1;
+  const a = F.lean * w;
+  const dx = X - HIP.x, dy = Y - HIP.y;
+  out[0] = HIP.x + dx * Math.cos(a) - dy * Math.sin(a) + F.bodyShift * w;
+  out[1] = HIP.y + dx * Math.sin(a) + dy * Math.cos(a);
+}
+
+function hairBend(h, x, y, out) {
+  const t = clamp((y - h.root[1]) / h.len, 0, 1.3);
+  const a = h.theta * h.amp * Math.pow(t, 1.25);
+  const dx = x - h.root[0], dy = y - h.root[1];
+  out[0] = h.root[0] + dx * Math.cos(a) - dy * Math.sin(a);
+  out[1] = h.root[1] + dx * Math.sin(a) + dy * Math.cos(a);
+}
+
+const tmp = [0, 0], tmp2 = [0, 0];
+function deformPart(p) {
+  const r = p.role, rest = p.rest, pos = p.pos, n = rest.length / 2;
+  const eyeS = r.eye ? F.eye : null;
+  let browC, browA = 0, browDY = 0;
+  if (r.brow) {
+    browC = [p.x + p.w / 2, p.y + p.h / 2];
+    browA = (r.brow === "R" ? -1 : 1) * P.ParamBrowAngle * 0.24;
+    browDY = -P.ParamBrowY * 6;
+  }
+  for (let k = 0; k < n; k++) {
+    let x = rest[k * 2], y = rest[k * 2 + 1];
+    // ---- local deformers
+    if (r.hair && opt.physics) { hairBend(HAIR[r.hair], x, y, tmp); x = tmp[0]; y = tmp[1]; }
+    if (r.brow) {
+      const dx = x - browC[0], dy = y - browC[1];
+      x = browC[0] + dx * Math.cos(browA) - dy * Math.sin(browA);
+      y = browC[1] + dx * Math.sin(browA) + dy * Math.cos(browA) + browDY;
+    }
+    if (eyeS) {
+      const piece = r.piece;
+      if (piece === "瞳" || piece === "瞳_縮小" || piece === "ハイライト") {
+        const m = piece === "ハイライト" ? 0.75 : 1;
+        x += eyeS.bx * m; y += eyeS.by * m;
+      }
+      if (piece !== "下まつげ" && piece !== "目閉じ" && piece !== "笑い目") {
+        const yc = lutY(r.eye === "R" ? CLOSE_R : CLOSE_L, x);
+        if (y < yc) y = yc + (y - yc) * eyeS.open;
+      }
+    }
+    if (r.mouth === "あ") { const top = 316; if (y > top) y = top + (y - top) * (0.35 + 0.65 * F.mouthOpen); }
+    if (r.sweat) y += F.sweatDrop;
+    // ---- head / neck / body
+    if (r.region === "head") {
+      headPoint(x, y, r.z || 0, tmp); bodyPoint(tmp[0], tmp[1], tmp, false);
+    } else if (r.region === "neck") {
+      const w = smooth(372, 300, y);
+      bodyPoint(x, y, tmp2, false);
+      headPoint(x, y, 0, tmp); bodyPoint(tmp[0], tmp[1], tmp, false);
+      tmp[0] = lerp(tmp2[0], tmp[0], w); tmp[1] = lerp(tmp2[1], tmp[1], w);
+    } else {
+      bodyPoint(x, y, tmp, r.region === "legs");
+    }
+    pos[k * 2] = tmp[0]; pos[k * 2 + 1] = tmp[1];
+  }
+}
+
+function opacityOf(p) {
+  const r = p.role;
+  if (r.eye) {
+    const e = F.eye, piece = r.piece;
+    if (piece === "目閉じ") return (1 - e.openVis) * (1 - P.ParamEyeSmile);
+    if (piece === "笑い目") return (1 - e.openVis) * P.ParamEyeSmile;
+    if (piece === "瞳") return e.openVis * (1 + P.ParamEyeBallForm);
+    if (piece === "瞳_縮小") return e.openVis * -P.ParamEyeBallForm;
+    return e.openVis;
+  }
+  if (r.mouth) return F.mouth[r.mouth] || 0;
+  if (r.cheek) return P.ParamCheek;
+  if (r.sweat) return P.ParamSweat;
+  return 1;
+}
+
+function mouthWeights() {
+  const open = P.ParamMouthOpenY, form = P.ParamMouthForm, shy = P.ParamMouthShy;
+  const o = smooth(0.12, 0.3, open);
+  const closed = 1 - o;
+  const smile = smooth(0.15, 0.55, form), frown = smooth(-0.15, -0.55, form);
+  const w = {
+    "通常": closed * (1 - smile) * (1 - frown) * (1 - shy),
+    "微笑み": closed * smile * (1 - shy),
+    "への字": closed * frown * (1 - shy),
+    "照れ": closed * shy,
+  };
+  const round = smooth(-0.2, -0.6, form);
+  w["お"] = o * round;
+  w["あ"] = o * (1 - round);
+  return w;
+}
+
+// ------------------------------------------------------------------ physics
+// Like Cubism physics: the pendulum's anchor is driven by the angle parameters
+// (head X / tilt, body X); the swing angle bends the strand from its root.
+function stepPhysics(dt) {
+  const head = 24 * P.ParamAngleX / 30 + 14 * P.ParamAngleZ / 30 + 10 * P.ParamBodyAngleX / 10;
+  const body = 18 * P.ParamBodyAngleX / 10 + 4 * P.ParamAngleX / 30;
+  for (const h of Object.values(HAIR)) {
+    const x = h === HAIR.aig ? body : head;
+    if (h.prev === null) { h.prev = x; h.vel = 0; h.acc = 0; continue; }
+    const v = (x - h.prev) / dt;
+    h.acc = lerp(h.acc, (v - h.vel) / dt, 0.5);
+    h.vel = v; h.prev = x;
+    // strands keep hanging down while the head tilts; a light breeze keeps them alive
+    const tilt = h === HAIR.aig ? F.lean : F.roll + F.lean;
+    const wind = 0.02 * h.wind * (Math.sin(S.t * 1.1 + h.phase) + 0.6 * Math.sin(S.t * 2.3 + h.phase * 1.7));
+    const target = -tilt * 0.75 + wind;
+    const sub = 4, sdt = dt / sub;
+    for (let i = 0; i < sub; i++) {
+      const acc = -h.k * (h.theta - target) - h.c * h.omega + h.g * h.acc / h.len * 1.6;
+      h.omega += acc * sdt; h.theta += h.omega * sdt;
+    }
+    h.theta = clamp(h.theta, -0.6, 0.6);
+  }
+}
+
+// ------------------------------------------------------------------ per frame
+function update(dt) {
+  S.t += dt;
+  const t = S.t;
+  // expression blend
+  for (const id of Object.keys(DEF)) {
+    const target = id in S.exprTarget ? S.exprTarget[id] : (id === "ParamEyeOpen" ? 1 : 0);
+    const cur = id in S.expr ? S.expr[id] : target;
+    S.expr[id] = lerp(cur, target, 1 - Math.exp(-dt / 0.11));
+  }
+  // follow (mouse) or idle wander
+  let tx = 0, ty = 0;
+  const idle = !S.mouse || t - S.lastMove > 3.5;
+  if (opt.follow && !idle) {
+    tx = clamp((S.mouse.x - HEAD_C.x) / 330, -1, 1); ty = clamp((S.mouse.y - HEAD_C.y) / 330, -1, 1);
+  } else if (opt.follow) {
+    tx = 0.35 * Math.sin(t * 0.37) + 0.15 * Math.sin(t * 0.91 + 1); ty = 0.15 * Math.sin(t * 0.53 + 2);
+  }
+  const f = S.follow, k = 26, c = 2 * Math.sqrt(k) * 0.95;
+  f.vx += (k * (tx - f.x) - c * f.vx) * dt; f.vy += (k * (ty - f.y) - c * f.vy) * dt;
+  f.x += f.vx * dt; f.y += f.vy * dt;
+
+  const shake = t - S.shake < 1.6 ? 26 * Math.sin((t - S.shake) * 13) * Math.exp(-(t - S.shake) * 2.2) : 0;
+  const bow = t - S.bow < 1.4 ? 22 * Math.sin((t - S.bow) * 9) * Math.exp(-(t - S.bow) * 2.6) : 0;
+  const breath = opt.breath ? 0.5 + 0.5 * Math.sin(t * 2 * Math.PI / 3.6) : 0;
+
+  // blink
+  let blink = 1;
+  if (opt.blink) {
+    const b = S.blink;
+    if (b.t < 0 && t > b.next) { b.t = t; b.double = Math.random() < 0.2; }
+    if (b.t >= 0) {
+      const u = (t - b.t) / 0.19;
+      blink = u < 0.5 ? 1 - u * 2 : u < 1 ? (u - 0.5) * 2 : 1;
+      if (u >= 1) {
+        if (b.double) { b.double = false; b.t = t + 0.05; }
+        else { b.t = -1; b.next = t + 1.8 + Math.random() * 4.2; }
+      }
+    }
+  }
+  const talk = opt.talk ? clamp(0.55 + 0.45 * Math.sin(t * 17) * Math.sin(t * 5.3 + 1) + 0.25 * Math.sin(t * 29), 0, 1) * (Math.sin(t * 1.4) > -0.6 ? 1 : 0) : 0;
+
+  const E = S.expr;
+  const base = {
+    ParamAngleX: f.x * 30 + shake,
+    ParamAngleY: -f.y * 30 + bow * -1,
+    ParamAngleZ: -f.x * f.y * 10 + shake * 0.12 + (E.ParamCheek || 0) * 4,
+    ParamBodyAngleX: f.x * 6 + Math.sin(t * 0.6) * 0.8,
+    ParamEyeOpen: E.ParamEyeOpen * blink,
+    ParamEyeSmile: E.ParamEyeSmile,
+    ParamEyeBallX: clamp(f.x * 0.9 + E.ParamEyeBallX, -1, 1),
+    ParamEyeBallY: clamp(-f.y * 0.9 + E.ParamEyeBallY, -1, 1),
+    ParamEyeBallForm: E.ParamEyeBallForm,
+    ParamBrowY: E.ParamBrowY,
+    ParamBrowAngle: E.ParamBrowAngle,
+    ParamMouthForm: E.ParamMouthForm,
+    ParamMouthOpenY: Math.max(E.ParamMouthOpenY, talk * 0.75),
+    ParamMouthShy: E.ParamMouthShy * (1 - talk),
+    ParamCheek: E.ParamCheek,
+    ParamSweat: E.ParamSweat,
+  };
+  for (const id of Object.keys(DEF)) P[id] = id in pinned ? pinned[id] : base[id];
+
+  const deg = Math.PI / 180;
+  F.yaw = P.ParamAngleX / 30 * 15 * deg; F.pitch = P.ParamAngleY / 30 * 10 * deg; F.roll = P.ParamAngleZ / 30 * 10 * deg;
+  F.cyaw = Math.cos(F.yaw); F.syaw = Math.sin(F.yaw); F.cpit = Math.cos(F.pitch); F.spit = Math.sin(F.pitch);
+  F.croll = Math.cos(F.roll); F.sroll = Math.sin(F.roll);
+  F.breath = breath; F.lean = P.ParamBodyAngleX / 10 * 2.2 * deg; F.bodyShift = P.ParamBodyAngleX * 0.5;
+  const openVis = smooth(0.06, 0.2, P.ParamEyeOpen);
+  F.eye = { open: Math.max(P.ParamEyeOpen, 0.02), openVis, bx: P.ParamEyeBallX * 4.5, by: P.ParamEyeBallY * 2.6 };
+  F.mouth = mouthWeights(); F.mouthOpen = P.ParamMouthOpenY;
+  F.sweatDrop = 1.5 * Math.sin(t * 2.2);
+  if (opt.physics && !S.holdPhysics) stepPhysics(dt);
+}
+
+// ------------------------------------------------------------------ draw
+function viewTarget() {
+  return S.view === "bust" ? [150, 0, 540, 760] : [130, 0, 560, 2000];
+}
+function draw() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.round(canvas.clientWidth * dpr), ch = Math.round(canvas.clientHeight * dpr);
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  gl.viewport(0, 0, cw, ch);
+  gl.clearColor(0, 0, 0, 0); gl.clearStencil(0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+  const [vx, vy, vw, vh] = S.viewRect;
+  const pad = 0.04;
+  const scale = Math.min(cw * (1 - pad * 2) / vw, ch * (1 - pad * 2 - 0.06) / vh);
+  const offX = (cw - vw * scale) / 2, offY = (ch - vh * scale) / 2 - ch * 0.02;
+  S.toArt = (px, py) => [(px * dpr - offX) / scale + vx, (py * dpr - offY) / scale + vy];
+  const view = [2 * scale / cw, -2 * scale / ch, (-vx * scale + offX) * 2 / cw - 1, 1 - (-vy * scale + offY) * 2 / ch];
+
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(prog);
+  gl.uniform4fv(U.view, view);
+  gl.activeTexture(gl.TEXTURE0); gl.uniform1i(U.tex, 0);
+  gl.enableVertexAttribArray(0); gl.enableVertexAttribArray(1);
+  for (const p of parts) {
+    const op = opacityOf(p);
+    p.op = op;
+    if (op < 0.004 && !(p.role.piece === "白目")) continue;
+    deformPart(p);
+    gl.bindBuffer(gl.ARRAY_BUFFER, p.posBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, p.pos);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, p.uvBuf); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, p.idxBuf);
+    gl.bindTexture(gl.TEXTURE_2D, p.tex);
+    const ref = p.role.eye === "R" ? 1 : 2;
+    if (p.role.piece === "白目") {
+      // eye white: write the clipping mask for the iris, then draw it
+      gl.enable(gl.STENCIL_TEST);
+      gl.stencilFunc(gl.ALWAYS, ref, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+      gl.colorMask(false, false, false, false);
+      gl.uniform1f(U.opacity, 1); gl.uniform1f(U.alphaTest, 0.35);
+      gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_SHORT, 0);
+      gl.colorMask(true, true, true, true);
+      gl.disable(gl.STENCIL_TEST);
+      if (op < 0.004) continue;
+    }
+    const clipped = p.role.piece === "瞳" || p.role.piece === "瞳_縮小" || p.role.piece === "ハイライト";
+    if (clipped) { gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.EQUAL, ref, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP); }
+    gl.uniform1f(U.opacity, op); gl.uniform1f(U.alphaTest, 0.0);
+    gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_SHORT, 0);
+    if (clipped) gl.disable(gl.STENCIL_TEST);
+  }
+  if (S.mesh) {
+    gl.useProgram(lineProg);
+    gl.uniform4fv(LU.view, view);
+    gl.disableVertexAttribArray(1);
+    for (const p of parts) {
+      if (p.op < 0.004) continue;
+      const c = p.role.hair ? [0.85, 0.35, 0.2, 0.55] : p.role.region === "head" ? [0.2, 0.45, 0.9, 0.45] : [0.25, 0.6, 0.35, 0.4];
+      gl.uniform4f(LU.color, c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]);
+      gl.bindBuffer(gl.ARRAY_BUFFER, p.posBuf); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, p.lineBuf);
+      gl.drawElements(gl.LINES, p.lineCount, gl.UNSIGNED_SHORT, 0);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ UI
+function setupUI() {
+  const exprEl = document.getElementById("expr");
+  EXPRESSIONS.forEach(({ name, hint }, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "expr" + i;
+    b.innerHTML = `<b>${name}</b><small>${hint}</small>`;
+    b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+    b.addEventListener("click", () => setExpression(i));
+    exprEl.appendChild(b);
+  });
+  for (const id of ["Follow", "Blink", "Breath", "Physics", "Talk", "Mesh"]) {
+    const el = document.getElementById("opt" + id);
+    const key = id.toLowerCase();
+    opt[key] = el.checked;
+    el.addEventListener("change", () => {
+      opt[key] = el.checked; if (key === "mesh") S.mesh = el.checked;
+      if (key === "physics" && !el.checked) for (const h of Object.values(HAIR)) { h.theta = 0; h.omega = 0; }
+    });
+  }
+  S.mesh = opt.mesh;
+  const box = document.getElementById("params");
+  for (const [id, label, min, max, def] of PARAM_DEFS) {
+    const row = document.createElement("div");
+    row.className = "param"; row.id = "row-" + id;
+    row.innerHTML = `<label for="sl-${id}">${label}<code>${id}</code></label><output id="out-${id}">${def.toFixed(2)}</output>
+      <input type="range" id="sl-${id}" min="${min}" max="${max}" step="${(max - min) / 200}" value="${def}">`;
+    box.appendChild(row);
+    const sl = row.querySelector("input");
+    sl.addEventListener("input", () => { pinned[id] = parseFloat(sl.value); row.classList.add("pinned"); });
+  }
+  document.getElementById("unpin").addEventListener("click", () => {
+    for (const id of Object.keys(pinned)) { delete pinned[id]; document.getElementById("row-" + id).classList.remove("pinned"); }
+  });
+  document.getElementById("shake").addEventListener("click", () => { S.shake = S.t; });
+  document.getElementById("bow").addEventListener("click", () => { S.bow = S.t; });
+  const vb = document.getElementById("viewBust"), vf = document.getElementById("viewFull");
+  const setView = v => { S.view = v; vb.setAttribute("aria-pressed", v === "bust"); vf.setAttribute("aria-pressed", v === "full"); };
+  vb.addEventListener("click", () => setView("bust"));
+  vf.addEventListener("click", () => setView("full"));
+  const move = e => {
+    if (!S.toArt) return;
+    const r = canvas.getBoundingClientRect();
+    const [x, y] = S.toArt(e.clientX - r.left, e.clientY - r.top);
+    S.mouse = { x, y }; S.lastMove = S.t;
+  };
+  canvas.addEventListener("pointermove", move);
+  canvas.addEventListener("pointerdown", move);
+  canvas.addEventListener("pointerleave", () => { S.lastMove = -10; });
+}
+
+function setExpression(i) {
+  S.exprIndex = i;
+  S.exprTarget = { ...EXPRESSIONS[i].params };
+  document.getElementById("exprName").textContent = EXPRESSIONS[i].name;
+  document.querySelectorAll("#expr button").forEach((b, j) => b.setAttribute("aria-pressed", j === i ? "true" : "false"));
+}
+
+let uiTick = 0, fpsAcc = 0, fpsN = 0, fps = 0;
+function refreshUI(dt) {
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
+  if ((uiTick++ & 7) !== 0) return;
+  statusEl.textContent = `${parts.length} パーツ · ${fps.toFixed(0)} fps`;
+  if (!document.getElementById("paramBox").open) return;
+  for (const [id] of PARAM_DEFS) {
+    document.getElementById("out-" + id).textContent = P[id].toFixed(2);
+    if (!(id in pinned)) document.getElementById("sl-" + id).value = P[id];
+  }
+}
+
+// ------------------------------------------------------------------ boot
+let last = 0;
+function frame(now) {
+  const dt = clamp((now - last) / 1000 || 1 / 60, 1 / 240, 1 / 20);
+  last = now;
+  const target = viewTarget();
+  S.viewRect = S.viewRect ? S.viewRect.map((v, i) => lerp(v, target[i], 1 - Math.exp(-dt / 0.12))) : target;
+  update(dt);
+  draw();
+  refreshUI(dt);
+  requestAnimationFrame(frame);
+}
+
+async function boot() {
+  if (!gl || !DATA) {
+    statusEl.hidden = true;
+    const d = document.createElement("div"); d.className = "fallback";
+    d.textContent = "このブラウザーでは WebGL が使えないため、プレビューを表示できません。";
+    document.querySelector(".stage").appendChild(d);
+    return;
+  }
+  prog = program(VS, FS); lineProg = program(VS, LFS);
+  U = { view: gl.getUniformLocation(prog, "u_view"), tex: gl.getUniformLocation(prog, "u_tex"), opacity: gl.getUniformLocation(prog, "u_opacity"),
+        alphaTest: gl.getUniformLocation(prog, "u_alphaTest") };
+  LU = { view: gl.getUniformLocation(lineProg, "u_view"), color: gl.getUniformLocation(lineProg, "u_color") };
+  for (const p of DATA.parts) { p.role = roleOf(p); parts.push(p); buildMesh(p); }
+  await Promise.all(parts.map(loadTexture));
+  setupUI();
+  setExpression(0);
+  window.__rig = { S, P, pinned, setExpression, opt, HAIR, update, draw };
+  requestAnimationFrame(t => { last = t; frame(t); });
+}
+boot().catch(err => { statusEl.textContent = "読み込みに失敗しました: " + err.message; console.error(err); });
+</script>

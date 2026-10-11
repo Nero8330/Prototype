@@ -1,0 +1,17 @@
+[
+  {"name": "通常", "file": "normal", "hint": "初期状態", "params": {}},
+  {"name": "笑顔", "file": "smile", "hint": "笑い目と微笑み",
+   "params": {"ParamEyeOpen": 0, "ParamEyeSmile": 1, "ParamMouthForm": 1, "ParamBrowY": 0.3, "ParamBrowAngle": -0.2}},
+  {"name": "怒り", "file": "angry", "hint": "眉を寄せ、への字口",
+   "params": {"ParamBrowAngle": 1, "ParamBrowY": -0.5, "ParamEyeOpen": 0.8, "ParamMouthForm": -1, "ParamEyeBallForm": -0.3}},
+  {"name": "驚き", "file": "surprised", "hint": "見開いた目と縮んだ瞳",
+   "params": {"ParamEyeOpen": 1.2, "ParamEyeBallForm": -1, "ParamBrowY": 1, "ParamMouthOpenY": 0.8, "ParamMouthForm": -1}},
+  {"name": "照れ", "file": "shy", "hint": "頬染めと目そらし",
+   "params": {"ParamCheek": 1, "ParamEyeBallX": -0.7, "ParamEyeBallY": -0.2, "ParamEyeOpen": 0.75, "ParamBrowAngle": -0.5, "ParamMouthShy": 1}},
+  {"name": "困り", "file": "troubled", "hint": "下がり眉と汗",
+   "params": {"ParamBrowAngle": -1, "ParamBrowY": 0.3, "ParamEyeOpen": 0.85, "ParamMouthForm": -0.6, "ParamSweat": 1}},
+  {"name": "ジト目", "file": "half_eyes", "hint": "半目で見下ろす",
+   "params": {"ParamEyeOpen": 0.42, "ParamBrowY": -0.6, "ParamBrowAngle": 0.3, "ParamMouthForm": -0.3, "ParamEyeBallY": -0.15}},
+  {"name": "得意げ", "file": "smug", "hint": "細めた目と口角の上がった笑み",
+   "params": {"ParamEyeOpen": 0.62, "ParamBrowY": 0.4, "ParamBrowAngle": 0.35, "ParamMouthForm": 0.8, "ParamEyeBallX": 0.3, "ParamEyeBallY": -0.1}}
+]
