@@ -94,9 +94,9 @@
     border: 2px solid transparent; background: #000;
   }
   .thumbs img.cur { border-color: var(--accent); }
-  .sounds { display: grid; gap: 4px; max-height: 220px; overflow-y: auto; }
+  .sounds { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-height: 220px; overflow-y: auto; }
   .snd {
-    display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center;
     padding: 4px 6px; border-radius: 6px; background: var(--panel2); border: 1px solid transparent; cursor: pointer;
   }
   .snd.sel { border-color: var(--accent2); }
@@ -112,7 +112,7 @@
   }
 
   @media (max-width: 900px) {
-    .app { grid-template-columns: 1fr; height: auto; }
+    .app { grid-template-columns: minmax(0, 1fr); height: auto; }
     .stage-wrap { padding: 12px 16px; }
     .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
     .hud { font-size: 10px; left: 8px; top: 6px; }
@@ -210,8 +210,8 @@
     <div class="row"><label class="k" for="pWords">擬音</label><input type="text" id="pWords" value="ドンッ,バチン,ペチッ"></div>
     <div class="row"><label class="k" for="pSound">ヒット音</label>
       <select id="pSound">
-        <option value="auto">自動（読込んだ単発音→なければ内蔵）</option>
-        <option value="synth">内蔵合成音</option>
+        <option value="auto">自動（1打だけの音声からランダム）</option>
+        <option value="synth">合成音</option>
         <option value="none">無音</option>
       </select>
     </div>
@@ -230,6 +230,8 @@
   </aside>
 </div>
 
+<!-- 内蔵音声（tools/build_sounds.py で生成）。無くても動作します -->
+<script src="sounds.js"></script>
 <script>
 'use strict';
 
@@ -537,7 +539,7 @@ const SND = {
     return src;
   },
 
-  // 内蔵の打撃音：ピッチが落ちる低音＋短いノイズ
+  // 合成の打撃音（音声が無いときの代わり）：ピッチが落ちる低音＋短いノイズ
   synthHit(when, s) {
     const c = this.ctx, v = Math.min(1, 0.35 + 0.5 * s);
     const o = c.createOscillator(), g = c.createGain();
@@ -591,15 +593,44 @@ const SND = {
     else this.synthHit(when, s);
   },
 
-  async addFile(file) {
-    this.ensure();
-    const ab = await file.arrayBuffer();
-    const buffer = await new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej));
+  // デコード専用のオフラインコンテキスト（ユーザー操作前でも使える）。
+  // AudioBuffer はコンテキスト間で共有できるので、再生は this.ctx で行う
+  decoder: null,
+  decode(ab) {
+    if (!this.decoder) {
+      const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      this.decoder = new OAC(2, 1, 44100);
+    }
+    return new Promise((res, rej) => this.decoder.decodeAudioData(ab, res, rej));
+  },
+  async add(name, ab) {
+    const buffer = await this.decode(ab);
     const a = analyze(buffer);
-    const item = { name: file.name.replace(/\.[^.]+$/, ''), buffer, ...a, onsets: detect(a.env, a.frameDt, S.sensitivity) };
+    const item = { name, buffer, ...a, onsets: detect(a.env, a.frameDt, S.sensitivity) };
     this.list.push(item);
     if (this.selected < 0) this.selected = this.list.length - 1;
     return item;
+  },
+  async addFile(file) {
+    return this.add(file.name.replace(/\.[^.]+$/, ''), await file.arrayBuffer());
+  },
+  // sounds.js に埋め込まれた内蔵音声を読み込む
+  async loadBundled() {
+    const list = window.BUNDLED_SOUNDS;
+    if (!Array.isArray(list) || !list.length) return 0;
+    let ok = 0;
+    for (const e of list) {
+      try {
+        const bin = atob(e.data), u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        await this.add(e.name, u8.buffer);
+        ok++;
+      } catch (err) { console.warn('内蔵音声の読込失敗:', e.name, err); }
+    }
+    // 音声同期の初期選択は「複数打撃」の最初の音声にする
+    const firstMulti = this.list.findIndex(x => x.onsets.length >= 2);
+    if (firstMulti >= 0) this.selected = firstMulti;
+    return ok;
   },
 };
 
@@ -1276,6 +1307,14 @@ addEventListener('keyup', e => { if (e.code === 'Space' && e.target instanceof H
 fitStage();
 drawWave();
 requestAnimationFrame(frame);
+
+if (window.BUNDLED_SOUNDS) {
+  setStatus('内蔵音声を読み込み中…');
+  SND.loadBundled().then(n => {
+    renderSounds(); renderSoundSelect(); drawWave();
+    setStatus(n ? `内蔵音声 ${n}件を読み込みました` : '');
+  });
+}
 </script>
 </body>
 </html>
