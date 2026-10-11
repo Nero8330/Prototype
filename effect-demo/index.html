@@ -1,0 +1,1281 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>演出デモ</title>
+<style>
+  :root {
+    --bg: #0e0f15;
+    --panel: #161823;
+    --panel2: #1d2030;
+    --line: #2a2e42;
+    --text: #e7e8f0;
+    --muted: #9497ad;
+    --accent: #ff5fa2;
+    --accent2: #8f7dff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.5 system-ui, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  }
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 360px; height: 100vh; }
+  .stage-wrap {
+    position: relative; min-width: 0; min-height: 0;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .stage-wrap:fullscreen { background: #000; }
+  .stage-box { position: relative; }
+  canvas#stage {
+    display: block; width: 100%; height: 100%;
+    background: #000; border-radius: 8px; cursor: crosshair;
+  }
+  .hud {
+    position: absolute; left: 12px; top: 10px; pointer-events: none;
+    font: 600 12px/1.4 ui-monospace, "SFMono-Regular", Menlo, monospace;
+    color: #fff; text-shadow: 0 1px 2px #000a;
+    display: grid; gap: 3px;
+  }
+  .hud .bar { width: 160px; height: 6px; background: #ffffff30; border-radius: 3px; overflow: hidden; }
+  .hud .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+  .drop-hint {
+    position: absolute; inset: 16px; border: 2px dashed var(--accent); border-radius: 10px;
+    display: none; align-items: center; justify-content: center;
+    background: #ff5fa21a; font-size: 18px; font-weight: 700; pointer-events: none;
+  }
+  body.dragging .drop-hint { display: flex; }
+
+  .panel {
+    background: var(--panel); border-left: 1px solid var(--line);
+    overflow-y: auto; padding: 12px 14px 40px;
+  }
+  .panel h2 {
+    font-size: 11px; letter-spacing: .08em; color: var(--muted);
+    margin: 18px 0 8px; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .panel h2:first-child { margin-top: 4px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  .row > label.k { width: 92px; color: var(--muted); flex: none; }
+  .row > input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .row > output { width: 44px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  select, input[type=text] {
+    flex: 1; min-width: 0; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit;
+  }
+  button, .filebtn {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 10px; font: inherit; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  button:hover, .filebtn:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: linear-gradient(135deg, #ff5fa2, #b04dff); border-color: transparent; font-weight: 700; }
+  button.stop { border-color: #ff6b6b66; }
+  .filebtn input { display: none; }
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .presets button { text-align: left; padding: 8px 10px; }
+  .presets button small { display: block; color: var(--muted); font-size: 11px; }
+  .presets button.active { border-color: var(--accent); background: #ff5fa21f; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { position: relative; }
+  .chip input { position: absolute; opacity: 0; pointer-events: none; }
+  .chip span {
+    display: inline-block; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line); color: var(--muted); background: var(--panel2); user-select: none;
+  }
+  .chip input:checked + span { color: #fff; border-color: var(--accent); background: #ff5fa22a; }
+  .chip input:focus-visible + span { outline: 2px solid var(--accent2); }
+  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .thumbs img {
+    width: 64px; height: 36px; object-fit: cover; border-radius: 4px; cursor: pointer;
+    border: 2px solid transparent; background: #000;
+  }
+  .thumbs img.cur { border-color: var(--accent); }
+  .sounds { display: grid; gap: 4px; max-height: 220px; overflow-y: auto; }
+  .snd {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center;
+    padding: 4px 6px; border-radius: 6px; background: var(--panel2); border: 1px solid transparent; cursor: pointer;
+  }
+  .snd.sel { border-color: var(--accent2); }
+  .snd .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .snd .badge { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .snd button { padding: 2px 8px; }
+  canvas#wave { width: 100%; height: 64px; background: var(--panel2); border-radius: 6px; display: block; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .status { min-height: 1.5em; color: var(--accent); font-size: 12px; }
+  kbd {
+    font: 11px ui-monospace, monospace; padding: 1px 5px; border-radius: 4px;
+    border: 1px solid var(--line); background: var(--panel2);
+  }
+
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; height: auto; }
+    .stage-wrap { padding: 12px 16px; }
+    .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+    .hud { font-size: 10px; left: 8px; top: 6px; }
+    .hud .bar { width: 90px; height: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage-wrap" id="stageWrap">
+    <div class="stage-box" id="stageBox">
+      <canvas id="stage" width="1280" height="720"></canvas>
+      <div class="hud" id="hud">
+        <div id="hudPreset">待機中</div>
+        <div id="hudBpm">BPM —</div>
+        <div>HEAT <span id="hudHeatNum">0</span>%</div>
+        <div class="bar"><i id="hudHeat"></i></div>
+      </div>
+    </div>
+    <div class="drop-hint">画像・音声ファイルをドロップ</div>
+  </div>
+
+  <aside class="panel">
+    <h2>素材 <span class="muted" style="text-transform:none;letter-spacing:0">ドラッグ＆ドロップ可</span></h2>
+    <div class="row">
+      <label class="filebtn">画像を読み込む<input type="file" id="imgInput" accept="image/*" multiple></label>
+      <label class="filebtn">音声を読み込む<input type="file" id="sndInput" accept="audio/*,.wav,.mp3,.ogg,.m4a" multiple></label>
+    </div>
+    <div class="thumbs" id="thumbs"></div>
+    <div class="muted" id="imgNote">画像が2枚以上あると、クリックでクロスフェード切替。クライマックス時は最後の画像へ自動切替します。</div>
+
+    <h2>演出プリセット</h2>
+    <div class="presets" id="presets">
+      <button data-preset="single">単発インパクト<small>1発・強め <kbd>1</kbd></small></button>
+      <button data-preset="triple">3連打<small>徐々に強く <kbd>2</kbd></small></button>
+      <button data-preset="loop">一定リズム<small>BPMでループ <kbd>3</kbd></small></button>
+      <button data-preset="irregular">不規則リズム<small>間隔・強弱ランダム <kbd>4</kbd></small></button>
+      <button data-preset="accel">加速→クライマックス<small>テンポ上昇→白飛び <kbd>5</kbd></small></button>
+      <button data-preset="afterglow">余韻<small>呼吸・湯気・鼓動 <kbd>6</kbd></small></button>
+      <button data-preset="syncOne">音声同期（1本）<small>選択中の音に同期 <kbd>7</kbd></small></button>
+      <button data-preset="syncChain">音声同期（連続）<small>ランダムに繋げる <kbd>8</kbd></small></button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="primary" id="btnHit" style="flex:1">ヒット <kbd>Space</kbd></button>
+      <button class="stop" id="btnStop">停止 <kbd>Esc</kbd></button>
+      <button id="btnFull" title="全画面">⛶</button>
+    </div>
+    <div class="status" id="status"></div>
+
+    <h2>ヒット演出（1打ごと）</h2>
+    <div class="chips" id="hitChips">
+      <label class="chip"><input type="checkbox" data-hit="bounce" checked><span>揺れ</span></label>
+      <label class="chip"><input type="checkbox" data-hit="punch" checked><span>ズームパンチ</span></label>
+      <label class="chip"><input type="checkbox" data-hit="shake" checked><span>画面振動</span></label>
+      <label class="chip"><input type="checkbox" data-hit="flash" checked><span>フラッシュ</span></label>
+      <label class="chip"><input type="checkbox" data-hit="ripple" checked><span>波紋</span></label>
+      <label class="chip"><input type="checkbox" data-hit="blur"><span>ズームブラー</span></label>
+      <label class="chip"><input type="checkbox" data-hit="lines"><span>集中線</span></label>
+      <label class="chip"><input type="checkbox" data-hit="text" checked><span>擬音テキスト</span></label>
+      <label class="chip"><input type="checkbox" data-hit="drops" checked><span>飛沫</span></label>
+      <label class="chip"><input type="checkbox" data-hit="hearts"><span>ハート</span></label>
+    </div>
+
+    <h2>常時演出</h2>
+    <div class="chips" id="ambChips">
+      <label class="chip"><input type="checkbox" data-amb="breath" checked><span>呼吸</span></label>
+      <label class="chip"><input type="checkbox" data-amb="steam" checked><span>湯気</span></label>
+      <label class="chip"><input type="checkbox" data-amb="sparkle" checked><span>汗のきらめき</span></label>
+      <label class="chip"><input type="checkbox" data-amb="floatHearts"><span>浮遊ハート</span></label>
+      <label class="chip"><input type="checkbox" data-amb="vignette" checked><span>ビネット</span></label>
+      <label class="chip"><input type="checkbox" data-amb="heartbeat"><span>鼓動</span></label>
+      <label class="chip"><input type="checkbox" id="hudToggle" checked><span>HUD</span></label>
+    </div>
+
+    <h2>パラメータ</h2>
+    <div class="row"><label class="k" for="pInt">強さ</label><input type="range" id="pInt" min="0.2" max="2" step="0.05" value="1"><output id="oInt">1.00</output></div>
+    <div class="row"><label class="k" for="pBpm">BPM</label><input type="range" id="pBpm" min="40" max="240" step="1" value="110"><output id="oBpm">110</output></div>
+    <div class="row"><label class="k" for="pAccel">加速の長さ</label><input type="range" id="pAccel" min="4" max="30" step="1" value="12"><output id="oAccel">12s</output></div>
+    <div class="row"><label class="k" for="pSoft">揺れの柔らかさ</label><input type="range" id="pSoft" min="0" max="1" step="0.05" value="0.5"><output id="oSoft">0.50</output></div>
+    <div class="row"><label class="k" for="pMotion">揺れ方向</label>
+      <select id="pMotion">
+        <option value="down">縦（下へ沈む）</option>
+        <option value="up">縦（上へ跳ねる）</option>
+        <option value="side">横（左右交互）</option>
+        <option value="depth">前後（ズーム）</option>
+      </select>
+    </div>
+    <div class="row"><label class="k" for="pFlash">フラッシュ色</label>
+      <select id="pFlash">
+        <option value="#ffffff">白</option>
+        <option value="#ff8cc6">ピンク</option>
+        <option value="#ffe08a">黄</option>
+      </select>
+    </div>
+    <div class="row"><label class="k" for="pWords">擬音</label><input type="text" id="pWords" value="ドンッ,バチン,ペチッ"></div>
+    <div class="row"><label class="k" for="pSound">ヒット音</label>
+      <select id="pSound">
+        <option value="auto">自動（読込んだ単発音→なければ内蔵）</option>
+        <option value="synth">内蔵合成音</option>
+        <option value="none">無音</option>
+      </select>
+    </div>
+    <div class="row"><label class="k" for="pVol">音量</label><input type="range" id="pVol" min="0" max="1" step="0.01" value="0.8"><output id="oVol">80</output></div>
+
+    <h2>音声同期 <span class="muted" style="text-transform:none;letter-spacing:0">打撃位置を自動検出</span></h2>
+    <div class="sounds" id="sounds"><div class="muted">音声ファイル未読込。読み込むと打撃タイミングを解析して一覧に表示します。</div></div>
+    <canvas id="wave" width="660" height="128" style="margin-top:8px"></canvas>
+    <div class="row"><label class="k" for="pSens">検出感度</label><input type="range" id="pSens" min="0" max="1" step="0.05" value="0.5"><output id="oSens">0.50</output></div>
+
+    <h2>操作</h2>
+    <div class="muted">
+      ステージをクリック → 演出の中心点（ズーム・波紋・飛沫の起点）を指定<br>
+      <kbd>Space</kbd> ヒット / <kbd>1</kbd>〜<kbd>8</kbd> プリセット / <kbd>Esc</kbd> 停止 / <kbd>H</kbd> HUD / <kbd>F</kbd> 全画面
+    </div>
+  </aside>
+</div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+ *  基本ユーティリティ
+ * ========================================================================= */
+const W = 1280, H = 720;
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+const easeOutBack = t => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const $ = id => document.getElementById(id);
+
+const cvs = $('stage');
+const ctx = cvs.getContext('2d');
+
+/* =========================================================================
+ *  設定（UIと連動）
+ * ========================================================================= */
+const S = {
+  intensity: 1,
+  bpm: 110,
+  accelDur: 12,
+  softness: 0.5,
+  motion: 'down',
+  flashColor: '#ffffff',
+  words: ['ドンッ', 'バチン', 'ペチッ'],
+  sound: 'auto',
+  volume: 0.8,
+  sensitivity: 0.5,
+  focus: { x: 0.5, y: 0.7 },
+  hit: { bounce: true, punch: true, shake: true, flash: true, ripple: true, blur: false, lines: false, text: true, drops: true, hearts: false },
+  amb: { breath: true, steam: true, sparkle: true, floatHearts: false, vignette: true, heartbeat: false },
+};
+const focusPx = () => ({ x: S.focus.x * W, y: S.focus.y * H });
+
+/* =========================================================================
+ *  カメラ：バネ（揺れ・パンチ）＋トラウマ方式の画面振動
+ * ========================================================================= */
+class Spring {
+  constructor(k) { this.k = k; this.x = 0; this.v = 0; }
+  // damping ratio ζ は「揺れの柔らかさ」から決める（柔らかい=ζ小=よく弾む）
+  step(dt, zeta) {
+    const c = 2 * zeta * Math.sqrt(this.k);
+    this.v += (-this.k * this.x - c * this.v) * dt;
+    this.x += this.v * dt;
+  }
+  kick(v) { this.v += v; }
+  reset() { this.x = 0; this.v = 0; }
+}
+
+const cam = {
+  x: new Spring(260),   // 横揺れ(px)
+  y: new Spring(260),   // 縦揺れ(px)
+  z: new Spring(240),   // 拡大率オフセット
+  trauma: 0,            // 0..1 振動量。表示は trauma^2 で効かせる
+  traumaHold: 0,        // 一定時間 trauma を減衰させない
+  side: 1,
+  push: 0, pushTarget: 0, pushRate: 2,   // ゆっくりした寄り（クライマックス用）
+  BASE: 1.08,           // 揺れで端が見えないよう少し拡大しておく
+};
+
+// なめらかな擬似ノイズ（振動用）
+const NP = Array.from({ length: 9 }, () => rand(0, Math.PI * 2));
+const noise = (t, ch) =>
+  (Math.sin(t * 23.1 + NP[ch * 3]) + 0.6 * Math.sin(t * 41.7 + NP[ch * 3 + 1]) + 0.35 * Math.sin(t * 67.3 + NP[ch * 3 + 2])) / 1.95;
+
+/* =========================================================================
+ *  状態
+ * ========================================================================= */
+const fx = {
+  time: 0,
+  heat: 0,            // 興奮度 0..1：ビネット・湯気量・呼吸速度などに効く
+  heatHoldUntil: 0,
+  flashA: 0, flashColor: '#fff', flashDecay: 4,
+  blur: 0,
+  lines: 0, linesHold: 0,
+  breathPhase: 0,
+  beatPhase: 0, beatPulse: 0,
+  hits: 0,
+  focusMarker: 0,
+};
+const P = { steam: [], ring: [], drop: [], heart: [], spark: [], text: [] };
+const P_MAX = 260;   // 種類ごとの上限
+
+/* =========================================================================
+ *  画像レイヤー（差分切替・クロスフェード）
+ * ========================================================================= */
+const images = [];        // {img, name}
+let curImg = null, prevImg = null, fadeT = 1;
+const FADE_DUR = 0.35;
+
+const placeholder = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, W, H);
+  grd.addColorStop(0, '#1c1f3a'); grd.addColorStop(1, '#3a1c38');
+  g.fillStyle = grd; g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#ffffff14'; g.lineWidth = 1;
+  for (let x = 0; x <= W; x += 64) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+  for (let y = 0; y <= H; y += 64) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  g.fillStyle = '#ffffff10';
+  g.beginPath(); g.arc(W * 0.5, H * 0.42, 150, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(W * 0.5, H * 0.95, 330, 220, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#ffffffb0'; g.textAlign = 'center';
+  g.font = '700 34px system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif';
+  g.fillText('画像をドロップ / 読み込み', W / 2, H / 2 - 6);
+  g.font = '400 18px system-ui, sans-serif'; g.fillStyle = '#ffffff70';
+  g.fillText('16:9 推奨。画像はブラウザ内でのみ使用され、どこにも送信されません', W / 2, H / 2 + 28);
+  return c;
+})();
+
+function drawCover(img, alpha) {
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const s = Math.max(W / iw, H / ih);
+  const dw = iw * s, dh = ih * s;
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  ctx.globalAlpha = 1;
+}
+
+function switchImage(i, instant) {
+  const next = images[i];
+  if (!next || next === curImg) return;
+  prevImg = curImg; curImg = next;
+  fadeT = instant || !prevImg ? 1 : 0;
+  renderThumbs();
+}
+
+/* =========================================================================
+ *  プリレンダー素材（ビネット・湯気スプライト）
+ * ========================================================================= */
+function makeVignette(color) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, W * 0.72);
+  grd.addColorStop(0, color + '00'); grd.addColorStop(1, color + 'ff');
+  g.fillStyle = grd; g.fillRect(0, 0, W, H);
+  return c;
+}
+const vignetteDark = makeVignette('#000000');
+const vignettePink = makeVignette('#ff3d8b');
+
+const steamSprite = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grd.addColorStop(0.4, 'rgba(255,255,255,0.35)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  return c;
+})();
+
+/* =========================================================================
+ *  パーティクル生成
+ * ========================================================================= */
+const push = (arr, p) => { if (arr.length < P_MAX) arr.push(p); };
+
+function spawnRing(x, y, s) {
+  push(P.ring, { x, y, life: 0, max: 0.5, r0: 18, r1: 160 + 140 * s, w: 10 * Math.min(1.5, s) + 3 });
+}
+function burstDrops(x, y, n, s) {
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + rand(-1.25, 1.25);
+    const sp = rand(380, 1050) * (0.6 + 0.5 * s);
+    push(P.drop, { x: x + rand(-30, 30), y: y + rand(-10, 10), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: rand(0.45, 0.9), r: rand(2.5, 5.5) });
+  }
+}
+const HEART_COLORS = ['#ff4f9a', '#ff7eb6', '#ff9ccc', '#ff3d7f', '#ffb3d6'];
+function burstHearts(x, y, n, s, big) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(120, 460) * (big ? 1.6 : 1) * (0.7 + 0.3 * s);
+    push(P.heart, {
+      x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, life: 0, max: rand(1.1, 2.0),
+      size: rand(14, 30) * (big ? 1.5 : 1), rot: rand(-0.4, 0.4), vr: rand(-1.5, 1.5),
+      color: pick(HEART_COLORS), sway: rand(0, 6.28), float: false,
+    });
+  }
+}
+// 連打で文字が重ならないよう、間引き＋中心の左右交互に配置
+let textSide = 1, lastTextAt = -1;
+function spawnText(word, s, big = false) {
+  const f = focusPx();
+  if (!big) {
+    if (fx.time - lastTextAt < 0.22) return;
+    if (P.text.length >= 3) {   // 一番古いものを消す（配列順は保証されないので life で判定）
+      let o = 0; P.text.forEach((p, i) => { if (p.life > P.text[o].life) o = i; });
+      P.text.splice(o, 1);
+    }
+    textSide *= -1;
+  }
+  lastTextAt = fx.time;
+  push(P.text, {
+    word, life: 0, max: big ? 1.6 : 0.9,
+    x: big ? f.x : clamp(f.x + textSide * rand(150, 300), 120, W - 120),
+    y: big ? clamp(f.y - 140, 120, H - 80) : clamp(f.y - rand(60, 220), 80, H - 60),
+    size: big ? 150 : 52 + 34 * Math.min(1.4, s),
+    rot: big ? 0 : rand(-0.28, 0.28),
+  });
+}
+function flash(color, alpha, decay) {
+  fx.flashColor = color;
+  fx.flashA = Math.max(fx.flashA, clamp(alpha, 0, 1));
+  fx.flashDecay = decay;
+}
+
+/* =========================================================================
+ *  演出の中核：hit()（1打）と climax()
+ *  strength: 0.3〜1.6 くらい。音声同期では検出した音量から決める
+ * ========================================================================= */
+function hit(strength = 1) {
+  const s = strength * S.intensity;
+  const h = S.hit;
+  const f = focusPx();
+
+  if (h.bounce) {
+    switch (S.motion) {
+      case 'down': cam.y.kick(380 * s); break;
+      case 'up': cam.y.kick(-380 * s); break;
+      case 'side': cam.x.kick(340 * s * cam.side); cam.side *= -1; break;
+      case 'depth': cam.z.kick(0.9 * s); break;
+    }
+  }
+  if (h.punch) cam.z.kick(0.55 * s);
+  if (h.shake) cam.trauma = Math.min(1, cam.trauma + 0.3 * s);
+  if (h.flash) flash(S.flashColor, 0.22 * s, 5);
+  if (h.ripple) spawnRing(f.x, f.y, s);
+  if (h.blur) fx.blur = Math.min(1, fx.blur + 0.55 * s);
+  if (h.lines) fx.lines = Math.max(fx.lines, Math.min(1, 0.5 + 0.4 * s));
+  if (h.text && S.words.length) spawnText(pick(S.words), s);
+  if (h.drops) burstDrops(f.x, f.y, Math.round(5 + 9 * s), s);
+  if (h.hearts) burstHearts(f.x, f.y, Math.round(2 + 4 * s), s, false);
+
+  fx.heat = clamp(fx.heat + 0.035 * strength, 0, 1);
+  fx.hits++;
+}
+
+function climax() {
+  const f = focusPx();
+  flash('#ffffff', 1, 1.4);              // 白飛び → 約1.5秒かけて戻る
+  cam.trauma = 1; cam.traumaHold = 0.5;   // 0.5秒間は最大振動を維持
+  cam.z.kick(1.3);
+  cam.pushTarget = 0.09; cam.pushRate = 1.6;
+  fx.blur = 1;
+  fx.lines = 1; fx.linesHold = 1.0;
+  burstHearts(f.x, f.y, 40, 1.4, true);
+  burstDrops(f.x, f.y, 36, 1.5);
+  spawnText('♥', 2.0, true);
+  fx.heat = 1; fx.heatHoldUntil = fx.time + 4;
+  if (images.length > 1) switchImage(images.length - 1);   // 差分切替
+  fx.hits++;
+  // 2.6秒後に寄りを戻して余韻へ
+  Conductor.at(2.6, () => { cam.pushTarget = 0; cam.pushRate = 0.6; enterAfterglow(false); });
+}
+
+function enterAfterglow(resetHeat) {
+  if (resetHeat) fx.heat = Math.max(fx.heat, 0.85);
+  fx.heatHoldUntil = fx.time + 2;
+  setAmb('breath', true); setAmb('steam', true); setAmb('heartbeat', true);
+  setPresetLabel('余韻');
+}
+
+/* =========================================================================
+ *  オーディオ：読込・内蔵合成音・打撃検出
+ * ========================================================================= */
+const SND = {
+  ctx: null, master: null, noise: null,
+  list: [],          // {name, buffer, env:Float32Array, frameDt, duration, onsets:[{t,s}]}
+  selected: -1,
+  active: new Set(),
+
+  ensure() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = S.volume;
+      this.master.connect(this.ctx.destination);
+      const n = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.5, this.ctx.sampleRate);
+      const d = n.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      this.noise = n;
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    return this.ctx;
+  },
+  now() { return this.ctx ? this.ctx.currentTime : 0; },
+  latency() { return this.ctx ? (this.ctx.outputLatency || this.ctx.baseLatency || 0) : 0; },
+
+  track(src) { this.active.add(src); src.onended = () => this.active.delete(src); },
+  stopAll() {
+    for (const s of this.active) { try { s.stop(); } catch (e) { /* 既に停止済み */ } }
+    this.active.clear();
+  },
+
+  playBuffer(buf, when, gain = 1, rate = 1) {
+    const c = this.ctx;
+    const src = c.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate;
+    const g = c.createGain(); g.gain.value = gain;
+    src.connect(g).connect(this.master);
+    src.start(when); this.track(src);
+    return src;
+  },
+
+  // 内蔵の打撃音：ピッチが落ちる低音＋短いノイズ
+  synthHit(when, s) {
+    const c = this.ctx, v = Math.min(1, 0.35 + 0.5 * s);
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(160, when);
+    o.frequency.exponentialRampToValueAtTime(48, when + 0.12);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(v, when + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 0.22);
+    o.connect(g).connect(this.master); o.start(when); o.stop(when + 0.25); this.track(o);
+
+    const n = c.createBufferSource(); n.buffer = this.noise;
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = rand(1400, 2200); bp.Q.value = 0.9;
+    const ng = c.createGain();
+    ng.gain.setValueAtTime(0.6 * v, when);
+    ng.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
+    n.connect(bp).connect(ng).connect(this.master); n.start(when); n.stop(when + 0.08); this.track(n);
+  },
+
+  // クライマックス用の低いブーム＋ノイズのうねり
+  synthBoom(when) {
+    const c = this.ctx;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(110, when);
+    o.frequency.exponentialRampToValueAtTime(30, when + 1.2);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(0.9, when + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 1.4);
+    o.connect(g).connect(this.master); o.start(when); o.stop(when + 1.5); this.track(o);
+
+    const n = c.createBufferSource(); n.buffer = this.noise; n.loop = true;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(3000, when); lp.frequency.exponentialRampToValueAtTime(200, when + 1.6);
+    const ng = c.createGain();
+    ng.gain.setValueAtTime(0.35, when); ng.gain.exponentialRampToValueAtTime(0.0001, when + 1.6);
+    n.connect(lp).connect(ng).connect(this.master); n.start(when); n.stop(when + 1.7); this.track(n);
+  },
+
+  // ヒット音の選択：設定に応じて内蔵音/読込音を鳴らす
+  playHit(when, s) {
+    if (S.sound === 'none') return;
+    if (S.sound === 'synth') return this.synthHit(when, s);
+    if (S.sound === 'auto') {
+      const singles = this.list.filter(x => x.onsets.length <= 1);
+      if (!singles.length) return this.synthHit(when, s);
+      return this.playBuffer(pick(singles).buffer, when, Math.min(1.2, 0.5 + 0.5 * s), rand(0.95, 1.05));
+    }
+    const item = this.list[+S.sound];
+    if (item) this.playBuffer(item.buffer, when, Math.min(1.2, 0.5 + 0.5 * s), rand(0.97, 1.03));
+    else this.synthHit(when, s);
+  },
+
+  async addFile(file) {
+    this.ensure();
+    const ab = await file.arrayBuffer();
+    const buffer = await new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej));
+    const a = analyze(buffer);
+    const item = { name: file.name.replace(/\.[^.]+$/, ''), buffer, ...a, onsets: detect(a.env, a.frameDt, S.sensitivity) };
+    this.list.push(item);
+    if (this.selected < 0) this.selected = this.list.length - 1;
+    return item;
+  },
+};
+
+/**
+ * 打撃（オンセット）検出
+ * analyze(): 5ms刻みのRMSエンベロープを作る（最大値で正規化）
+ * detect():  次の2条件を両方満たした瞬間を「打撃」とみなす
+ *   ・エンベロープが絶対しきい値を超える
+ *   ・直前200msの平均に対して ratio 倍以上に立ち上がる
+ * 感度 0..1 で両しきい値を動かす（感度を変えても再解析は不要）
+ */
+function analyze(buffer) {
+  const sr = buffer.sampleRate, hop = Math.max(1, Math.round(sr * 0.005)), win = hop * 2;
+  const chs = []; for (let c = 0; c < buffer.numberOfChannels; c++) chs.push(buffer.getChannelData(c));
+  const len = buffer.length, n = Math.floor(len / hop);
+  const env = new Float32Array(n);
+  let peak = 1e-9;
+  for (let i = 0; i < n; i++) {
+    let sum = 0; const st = i * hop, en = Math.min(len, st + win);
+    for (let j = st; j < en; j++) {
+      let v = 0; for (const d of chs) v += d[j];
+      v /= chs.length; sum += v * v;
+    }
+    env[i] = Math.sqrt(sum / Math.max(1, en - st));
+    if (env[i] > peak) peak = env[i];
+  }
+  for (let i = 0; i < n; i++) env[i] /= peak;
+  return { env, frameDt: hop / sr, duration: buffer.duration };
+}
+
+function detect(env, frameDt, sens) {
+  const absTh = lerp(0.32, 0.06, sens), ratio = lerp(3.2, 1.5, sens), minGap = 0.09, L = 40;
+  const onsets = [];
+  let acc = 0, last = -1e9;
+  for (let i = 1; i < env.length; i++) {
+    acc += env[i - 1]; if (i - 1 - L >= 0) acc -= env[i - 1 - L];
+    const local = acc / Math.min(i, L);
+    if (env[i] > absTh && env[i] > local * ratio && (i - last) * frameDt > minGap) {
+      let m = env[i]; for (let k = i; k < Math.min(env.length, i + 10); k++) m = Math.max(m, env[k]);
+      onsets.push({ t: i * frameDt, s: m });
+      last = i;
+    }
+  }
+  return onsets;
+}
+
+/* =========================================================================
+ *  コンダクター：オーディオ時計基準でビートを先読みスケジュールし、
+ *  音が「聞こえる瞬間」に映像の演出を発火させる
+ * ========================================================================= */
+const Conductor = {
+  pattern: null, beat: 0, startAt: 0, nextAt: 0,
+  queue: [],           // {t, fn}  t = AudioContext 時刻
+  curBpm: null,
+  sync: null,          // 音声同期中の {item, t0}
+
+  at(delaySec, fn) { this.push(SND.now() + delaySec, fn); },
+  push(t, fn) {
+    this.queue.push({ t, fn });
+    this.queue.sort((a, b) => a.t - b.t);
+  },
+  start(pattern) {
+    this.stop();
+    SND.ensure();
+    this.pattern = pattern; this.beat = 0;
+    this.startAt = this.nextAt = SND.now() + 0.06;
+  },
+  stop() {
+    this.pattern = null; this.queue.length = 0; this.curBpm = null; this.sync = null;
+    SND.stopAll();
+  },
+  tick() {
+    if (!SND.ctx) return;
+    const now = SND.now();
+    // 120ms 先まで音をスケジュール
+    while (this.pattern && this.nextAt < now + 0.12) {
+      const b = this.pattern.next(this.beat, this.nextAt - this.startAt);
+      if (!b) { this.pattern = null; break; }
+      const t = this.nextAt, s = b.s;
+      if (b.climax) { SND.synthBoom(t); SND.playHit(t, 1.5); this.push(t, climax); }
+      else { SND.playHit(t, s); this.push(t, () => hit(s)); }
+      this.beat++;
+      this.nextAt += b.gap;
+    }
+    // 出力レイテンシを考慮して、音が鳴るタイミングで演出を発火
+    const fireAt = now - SND.latency() + 0.008;
+    while (this.queue.length && this.queue[0].t <= fireAt) this.queue.shift().fn();
+  },
+};
+
+/* =========================================================================
+ *  プリセット（パターン定義）
+ *  next(beatIndex, elapsedSec) → { gap: 次のビートまでの秒, s: 強さ, climax? } | null
+ * ========================================================================= */
+const Patterns = {
+  single: {
+    label: '単発インパクト',
+    next: i => i === 0 ? { gap: 0, s: 1.35 } : null,
+  },
+  triple: {
+    label: '3連打',
+    next: i => i < 3 ? { gap: [0.42, 0.42, 0][i], s: [0.65, 0.85, 1.25][i] } : null,
+  },
+  loop: {
+    label: '一定リズム',
+    next() { Conductor.curBpm = S.bpm; return { gap: 60 / S.bpm, s: rand(0.7, 0.95) }; },
+  },
+  irregular: {
+    label: '不規則リズム',
+    next() {
+      Conductor.curBpm = null;
+      const r = Math.random();
+      const gap = r < 0.18 ? rand(0.11, 0.16)       // 素早い2連
+        : r < 0.6 ? rand(0.3, 0.5)
+          : rand(0.55, 1.1);                        // ため
+      const s = Math.random() < 0.15 ? rand(1.1, 1.35) : rand(0.4, 0.95);
+      return { gap, s };
+    },
+  },
+  accel: {
+    label: '加速→クライマックス',
+    done: false,
+    next(i, t) {
+      if (i === 0) this.done = false;
+      if (this.done) return null;
+      const p = t / S.accelDur;
+      if (p >= 1) { this.done = true; Conductor.curBpm = null; return { gap: 0, s: 1.6, climax: true }; }
+      const bpm = lerp(70, 210, p * p);
+      Conductor.curBpm = Math.round(bpm);
+      return { gap: 60 / bpm, s: lerp(0.45, 1.05, p) + rand(-0.08, 0.08) };
+    },
+  },
+};
+
+function runPreset(name) {
+  SND.ensure();
+  setStatus('');
+  document.querySelectorAll('#presets button').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
+  if (Patterns[name]) {
+    Conductor.start(Patterns[name]);
+    setPresetLabel(Patterns[name].label);
+    return;
+  }
+  if (name === 'afterglow') { Conductor.stop(); enterAfterglow(true); return; }
+  if (name === 'syncOne') { syncPlay(SND.list[SND.selected], false); return; }
+  if (name === 'syncChain') { syncPlay(null, true); return; }
+}
+
+// 読み込んだ音声を再生し、検出した打撃位置で hit() を発火
+// chain=true なら終わり際に次の音声を（止めずに）ぴったり繋げる
+function syncPlay(item, chain, startAt) {
+  const multi = SND.list.filter(x => x.onsets.length >= 2);
+  if (!SND.list.length) { setStatus('音声ファイルを読み込んでください'); return; }
+  if (chain && !multi.length) { setStatus('連続同期には複数打撃の音声が必要です'); return; }
+  if (!item) item = chain ? pick(multi) : SND.list[0];
+  if (startAt === undefined) Conductor.stop();
+  const t0 = startAt ?? SND.now() + 0.06;
+  SND.playBuffer(item.buffer, t0, 1);
+  for (const o of item.onsets) {
+    const s = 0.35 + 0.8 * Math.sqrt(o.s);
+    Conductor.push(t0 + o.t, () => hit(s));
+  }
+  // 再生ヘッド表示と選択の切替は、その音声が鳴り始める瞬間に行う
+  Conductor.push(t0, () => {
+    Conductor.sync = { item, t0 };
+    selectSound(SND.list.indexOf(item));
+    setPresetLabel((chain ? '同期（連続）: ' : '同期: ') + item.name);
+  });
+  if (chain) {
+    const nextStart = t0 + item.duration - 0.15 + rand(0, 0.35);
+    // 少し前に次を予約しておく（スケジュールの遅れ防止）
+    Conductor.push(nextStart - 0.25, () => syncPlay(null, true, nextStart));
+  }
+}
+
+/* =========================================================================
+ *  更新
+ * ========================================================================= */
+function setAmb(key, on) {
+  S.amb[key] = on;
+  const el = document.querySelector(`[data-amb="${key}"]`);
+  if (el) el.checked = on;
+}
+
+function update(dt) {
+  fx.time += dt;
+
+  // バネ：安定のため120Hzでサブステップ
+  const zeta = lerp(0.85, 0.28, S.softness);
+  const steps = Math.ceil(dt / (1 / 120)), sdt = dt / steps;
+  for (let i = 0; i < steps; i++) { cam.x.step(sdt, zeta); cam.y.step(sdt, zeta); cam.z.step(sdt, zeta); }
+
+  if (cam.traumaHold > 0) cam.traumaHold -= dt;
+  else cam.trauma = Math.max(0, cam.trauma - 1.5 * dt);
+  cam.push += (cam.pushTarget - cam.push) * (1 - Math.exp(-dt * cam.pushRate));
+
+  fx.flashA = Math.max(0, fx.flashA - fx.flashDecay * dt * Math.max(0.3, fx.flashA));
+  fx.blur = Math.max(0, fx.blur - 2.6 * dt);
+  if (fx.linesHold > 0) fx.linesHold -= dt; else fx.lines = Math.max(0, fx.lines - 3.5 * dt);
+  fx.focusMarker = Math.max(0, fx.focusMarker - dt);
+  if (fx.time > fx.heatHoldUntil) fx.heat = Math.max(0, fx.heat - 0.018 * dt);
+  if (fadeT < 1) fadeT = Math.min(1, fadeT + dt / FADE_DUR);
+
+  // 呼吸：興奮度が高いほど速く浅く
+  fx.breathPhase += dt * Math.PI * 2 / lerp(4.2, 1.6, fx.heat);
+  // 鼓動：BPM 60→130
+  fx.beatPhase += dt * lerp(60, 130, fx.heat) / 60;
+  const fr = fx.beatPhase % 1;
+  fx.beatPulse = S.amb.heartbeat ? Math.exp(-fr * 12) + (fr > 0.22 ? 0.6 * Math.exp(-(fr - 0.22) * 12) : 0) : 0;
+
+  // 常時演出の生成
+  const heat = fx.heat;
+  if (S.amb.steam && Math.random() < dt * (1.2 + heat * 7)) {
+    push(P.steam, {
+      x: rand(-50, W + 50), y: rand(H * 0.25, H * 1.05), vx: rand(-14, 14), vy: rand(-40, -18),
+      life: 0, max: rand(2.8, 5), size: rand(90, 220), grow: rand(30, 70), a: rand(0.06, 0.16) * (0.5 + heat),
+    });
+  }
+  if (S.amb.sparkle && Math.random() < dt * (1.5 + heat * 5)) {
+    const f = focusPx();
+    push(P.spark, { x: clamp(f.x + rand(-420, 420), 20, W - 20), y: clamp(f.y + rand(-420, 120), 20, H - 20), life: 0, max: rand(0.35, 0.8), size: rand(5, 13) });
+  }
+  if (S.amb.floatHearts && Math.random() < dt * (0.6 + heat * 3)) {
+    push(P.heart, {
+      x: rand(40, W - 40), y: H + 20, vx: 0, vy: rand(-110, -60), life: 0, max: rand(3, 5),
+      size: rand(12, 26), rot: rand(-0.3, 0.3), vr: 0, color: pick(HEART_COLORS), sway: rand(0, 6.28), float: true,
+    });
+  }
+
+  // パーティクル更新
+  step(P.steam, p => { p.x += p.vx * dt; p.y += p.vy * dt; p.size += p.grow * dt; });
+  step(P.ring, () => {});
+  step(P.drop, p => { p.vy += 2300 * dt; p.x += p.vx * dt; p.y += p.vy * dt; });
+  step(P.heart, p => {
+    if (p.float) { p.x += Math.sin(fx.time * 2 + p.sway) * 30 * dt; p.y += p.vy * dt; return; }
+    const drag = Math.exp(-2.2 * dt);
+    p.vx *= drag; p.vy = p.vy * drag - 160 * dt;
+    p.x += p.vx * dt + Math.sin(fx.time * 3 + p.sway) * 20 * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+  });
+  step(P.spark, () => {});
+  step(P.text, () => {});
+
+  function step(arr, fn) {
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const p = arr[i]; p.life += dt;
+      if (p.life >= p.max) { arr[i] = arr[arr.length - 1]; arr.pop(); continue; }
+      fn(p);
+    }
+  }
+}
+
+/* =========================================================================
+ *  描画
+ * ========================================================================= */
+function heartPath(g, size) {
+  const s = size / 2;
+  g.beginPath();
+  g.moveTo(0, s * 0.9);
+  g.bezierCurveTo(-s * 1.35, s * 0.05, -s * 1.0, -s * 1.05, 0, -s * 0.42);
+  g.bezierCurveTo(s * 1.0, -s * 1.05, s * 1.35, s * 0.05, 0, s * 0.9);
+  g.closePath();
+}
+
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  const f = focusPx();
+  const tr = cam.trauma * cam.trauma;
+  const t = fx.time;
+  const breathS = S.amb.breath ? Math.sin(fx.breathPhase) * lerp(0.006, 0.004, fx.heat) : 0;
+  const breathY = S.amb.breath ? Math.sin(fx.breathPhase - 0.6) * lerp(5, 3, fx.heat) : 0;
+  const scale = cam.BASE * (1 + cam.z.x + breathS + fx.beatPulse * 0.006 + cam.push);
+  const ox = cam.x.x + 34 * tr * noise(t, 0);
+  const oy = cam.y.x + 34 * tr * noise(t, 1) + breathY;
+  const rot = 0.025 * tr * noise(t, 2);
+
+  // --- ワールド（画像）---
+  ctx.save();
+  ctx.translate(f.x + ox, f.y + oy);
+  ctx.rotate(rot);
+  ctx.scale(scale, scale);
+  ctx.translate(-f.x, -f.y);
+  const cur = curImg ? curImg.img : placeholder;
+  if (prevImg && fadeT < 1) drawCover(prevImg.img, 1);
+  drawCover(cur, prevImg && fadeT < 1 ? fadeT : 1);
+  // ズームブラー：焦点から拡大したコピーを薄く重ねる
+  if (fx.blur > 0.01) {
+    for (let k = 1; k <= 4; k++) {
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      const z = 1 + 0.02 * k * fx.blur;
+      ctx.scale(z, z);
+      ctx.translate(-f.x, -f.y);
+      drawCover(cur, 0.24 * fx.blur * (1 - k / 5));
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+
+  // --- スクリーン空間のオーバーレイ ---
+  // 湯気
+  for (const p of P.steam) {
+    const k = p.life / p.max;
+    ctx.globalAlpha = p.a * Math.sin(Math.PI * k);
+    ctx.drawImage(steamSprite, p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // 集中線
+  if (fx.lines > 0.01) drawSpeedLines(f, fx.lines);
+
+  // 波紋
+  for (const p of P.ring) {
+    const k = p.life / p.max, e = easeOutCubic(k);
+    ctx.strokeStyle = `rgba(255,255,255,${(1 - k) * 0.75})`;
+    ctx.lineWidth = p.w * (1 - k) + 1;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, lerp(p.r0, p.r1, e), lerp(p.r0, p.r1, e) * 0.62, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // 飛沫（速度方向に伸びたしずく）
+  for (const p of P.drop) {
+    const k = p.life / p.max;
+    const sp = Math.hypot(p.vx, p.vy);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    ctx.globalAlpha = 1 - k * k;
+    ctx.fillStyle = 'rgba(236,246,255,0.95)';
+    ctx.beginPath(); ctx.ellipse(0, 0, p.r + sp * 0.012, p.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(160,200,255,0.55)';
+    ctx.beginPath(); ctx.ellipse(-p.r * 0.4, p.r * 0.2, p.r * 0.6, p.r * 0.35, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // ハート
+  for (const p of P.heart) {
+    const k = p.life / p.max;
+    const pop = Math.min(1, p.life / 0.12);
+    ctx.save();
+    ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+    ctx.scale(pop, pop);
+    ctx.globalAlpha = (p.float ? 0.75 : 1) * (k > 0.7 ? (1 - k) / 0.3 : 1);
+    heartPath(ctx, p.size);
+    ctx.fillStyle = p.color; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.stroke();
+    ctx.restore();
+  }
+
+  // きらめき（加算合成）
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of P.spark) {
+    const k = p.life / p.max, a = Math.sin(Math.PI * k), r = p.size * (0.6 + 0.4 * a);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const ang = i * Math.PI / 4, rr = i % 2 === 0 ? r : r * 0.22;
+      ctx.lineTo(p.x + Math.cos(ang) * rr, p.y + Math.sin(ang) * rr);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+
+  // ビネット（興奮度・鼓動で強まる）
+  if (S.amb.vignette) {
+    ctx.globalAlpha = 0.28 + 0.2 * fx.heat;
+    ctx.drawImage(vignetteDark, 0, 0);
+    ctx.globalAlpha = clamp(fx.heat * 0.5 + fx.beatPulse * 0.22, 0, 1);
+    ctx.drawImage(vignettePink, 0, 0);
+    ctx.globalAlpha = 1;
+  } else if (fx.beatPulse > 0) {
+    ctx.globalAlpha = fx.beatPulse * 0.25;
+    ctx.drawImage(vignettePink, 0, 0);
+    ctx.globalAlpha = 1;
+  }
+
+  // 擬音テキスト
+  for (const p of P.text) drawText(p);
+
+  // フラッシュ
+  if (fx.flashA > 0.003) {
+    ctx.globalAlpha = fx.flashA;
+    ctx.fillStyle = fx.flashColor;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  // 中心点マーカー
+  if (fx.focusMarker > 0) {
+    ctx.globalAlpha = Math.min(1, fx.focusMarker * 2);
+    ctx.strokeStyle = '#ff5fa2'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(f.x, f.y, 18, 0, Math.PI * 2);
+    ctx.moveTo(f.x - 30, f.y); ctx.lineTo(f.x + 30, f.y);
+    ctx.moveTo(f.x, f.y - 30); ctx.lineTo(f.x, f.y + 30);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawSpeedLines(f, a) {
+  const R = Math.hypot(W, H);
+  ctx.fillStyle = `rgba(255,255,255,${0.55 * a})`;
+  for (let i = 0; i < 110; i++) {
+    const ang = rand(0, Math.PI * 2);
+    const inner = rand(0.22, 0.42) * R;
+    const half = rand(0.004, 0.012);
+    ctx.beginPath();
+    ctx.moveTo(f.x + Math.cos(ang) * inner, f.y + Math.sin(ang) * inner);
+    ctx.lineTo(f.x + Math.cos(ang - half) * R, f.y + Math.sin(ang - half) * R);
+    ctx.lineTo(f.x + Math.cos(ang + half) * R, f.y + Math.sin(ang + half) * R);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+function drawText(p) {
+  const k = p.life / p.max;
+  const popIn = Math.min(1, p.life / 0.14);
+  const sc = lerp(1.8, 1, easeOutBack(popIn));
+  const fadeStart = 0.65;
+  const a = k < fadeStart ? 1 : 1 - (k - fadeStart) / (1 - fadeStart);
+  const rise = k < fadeStart ? 0 : (k - fadeStart) * 60;
+  ctx.save();
+  ctx.translate(p.x + rand(-1.5, 1.5) * (1 - popIn), p.y - rise);
+  ctx.rotate(p.rot);
+  ctx.scale(sc, sc);
+  ctx.globalAlpha = a;
+  ctx.font = `900 ${p.size}px "Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = p.size * 0.2; ctx.strokeStyle = '#ff3d8b'; ctx.strokeText(p.word, 0, 0);
+  ctx.lineWidth = p.size * 0.08; ctx.strokeStyle = '#ffffff'; ctx.strokeText(p.word, 0, 0);
+  ctx.fillStyle = p.word === '♥' ? '#ff4f9a' : '#ffffff';
+  ctx.fillText(p.word, 0, 0);
+  ctx.restore();
+}
+
+/* =========================================================================
+ *  メインループ
+ * ========================================================================= */
+let lastT = performance.now(), hudT = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+  Conductor.tick();
+  update(dt);
+  render();
+  hudT += dt;
+  if (hudT > 0.1) { hudT = 0; updateHud(); drawWave(); }
+  requestAnimationFrame(frame);
+}
+
+/* =========================================================================
+ *  UI
+ * ========================================================================= */
+let presetLabel = '待機中';
+function setPresetLabel(s) { presetLabel = s; }
+function setStatus(s) { $('status').textContent = s; }
+
+function updateHud() {
+  $('hudPreset').textContent = presetLabel;
+  $('hudBpm').textContent = 'BPM ' + (Conductor.curBpm ?? '—') + '   HITS ' + fx.hits;
+  const h = Math.round(fx.heat * 100);
+  $('hudHeatNum').textContent = h;
+  $('hudHeat').style.width = h + '%';
+}
+
+// ステージを 16:9 でコンテナにフィット
+function fitStage() {
+  const wrap = $('stageWrap'), box = $('stageBox');
+  const r = wrap.getBoundingClientRect();
+  const narrow = matchMedia('(max-width: 900px)').matches;
+  const pad = 32;
+  let w = r.width - pad, h = w * 9 / 16;
+  if (!narrow && h > r.height - pad) { h = r.height - pad; w = h * 16 / 9; }
+  box.style.width = Math.max(100, w) + 'px';
+  box.style.height = Math.max(56, h) + 'px';
+}
+new ResizeObserver(fitStage).observe($('stageWrap'));
+addEventListener('resize', fitStage);
+
+// 素材読込
+function isAudio(f) { return f.type.startsWith('audio/') || /\.(wav|mp3|ogg|m4a|flac)$/i.test(f.name); }
+function handleFiles(files) {
+  const list = [...files];
+  for (const f of list) {
+    if (f.type.startsWith('image/')) {
+      const img = new Image();
+      img.onload = () => { images.push({ img, name: f.name }); if (!curImg) switchImage(0, true); else renderThumbs(); };
+      img.src = URL.createObjectURL(f);
+    }
+  }
+  const audios = list.filter(isAudio);
+  if (audios.length) {
+    setStatus(`音声を解析中… (${audios.length})`);
+    (async () => {
+      let ok = 0;
+      for (const f of audios) {
+        try { await SND.addFile(f); ok++; } catch (e) { console.warn(e); setStatus(`読込失敗: ${f.name}`); }
+      }
+      renderSounds(); renderSoundSelect();
+      setStatus(`${ok}件の音声を読み込みました`);
+    })();
+  }
+}
+$('imgInput').addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
+$('sndInput').addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
+
+let dragDepth = 0;
+addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
+  if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files);
+});
+
+function renderThumbs() {
+  const el = $('thumbs'); el.innerHTML = '';
+  images.forEach((it, i) => {
+    const t = document.createElement('img');
+    t.src = it.img.src; t.title = it.name;
+    if (it === curImg) t.className = 'cur';
+    t.onclick = () => switchImage(i);
+    el.appendChild(t);
+  });
+}
+
+function renderSounds() {
+  const el = $('sounds'); el.innerHTML = '';
+  if (!SND.list.length) {
+    el.innerHTML = '<div class="muted">音声ファイル未読込。読み込むと打撃タイミングを解析して一覧に表示します。</div>';
+    return;
+  }
+  SND.list.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'snd' + (i === SND.selected ? ' sel' : '');
+    row.innerHTML = `<span class="nm"></span><span class="badge">${it.onsets.length}打 · ${it.duration.toFixed(1)}s</span><button title="同期再生">▶</button>`;
+    row.querySelector('.nm').textContent = it.name;
+    row.querySelector('.nm').title = it.name;
+    row.onclick = () => selectSound(i);
+    row.querySelector('button').onclick = e => { e.stopPropagation(); selectSound(i); runPreset('syncOne'); };
+    el.appendChild(row);
+  });
+}
+function selectSound(i) {
+  if (i < 0) return;
+  SND.selected = i;
+  document.querySelectorAll('#sounds .snd').forEach((r, k) => r.classList.toggle('sel', k === i));
+  drawWave();
+}
+function renderSoundSelect() {
+  const sel = $('pSound'), cur = sel.value;
+  sel.querySelectorAll('option[data-file]').forEach(o => o.remove());
+  SND.list.forEach((it, i) => {
+    const o = document.createElement('option');
+    o.value = String(i); o.dataset.file = '1';
+    o.textContent = `${it.name}（${it.onsets.length}打）`;
+    sel.appendChild(o);
+  });
+  sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'auto';
+}
+
+// 波形＋検出位置＋再生ヘッド
+const wave = $('wave'), wctx = wave.getContext('2d');
+function drawWave() {
+  const ww = wave.width, wh = wave.height;
+  wctx.clearRect(0, 0, ww, wh);
+  const it = SND.list[SND.selected];
+  if (!it) {
+    wctx.fillStyle = '#9497ad'; wctx.font = '22px system-ui, sans-serif'; wctx.textAlign = 'center';
+    wctx.fillText('波形（音声を選択）', ww / 2, wh / 2 + 7);
+    return;
+  }
+  const env = it.env, n = env.length;
+  wctx.fillStyle = '#8f7dff99';
+  for (let x = 0; x < ww; x++) {
+    const a = Math.floor(x / ww * n), b = Math.max(a + 1, Math.floor((x + 1) / ww * n));
+    let m = 0; for (let i = a; i < b && i < n; i++) m = Math.max(m, env[i]);
+    const hgt = m * (wh - 8);
+    wctx.fillRect(x, (wh - hgt) / 2, 1, hgt);
+  }
+  wctx.fillStyle = '#ff5fa2';
+  for (const o of it.onsets) {
+    const x = o.t / it.duration * ww;
+    wctx.fillRect(x - 1, 0, 2, wh);
+  }
+  const sy = Conductor.sync;
+  if (sy && sy.item === it && SND.ctx) {
+    const pt = SND.now() - sy.t0;
+    if (pt >= 0 && pt <= it.duration) {
+      wctx.fillStyle = '#ffffff';
+      wctx.fillRect(pt / it.duration * ww - 1, 0, 2, wh);
+    }
+  }
+}
+
+// プリセット・ボタン
+document.querySelectorAll('#presets button').forEach(b => b.addEventListener('click', () => runPreset(b.dataset.preset)));
+function manualHit() {
+  SND.ensure();
+  SND.playHit(SND.now() + 0.005, 1);
+  hit(1);
+}
+function stopAll() {
+  Conductor.stop();
+  setPresetLabel('待機中');
+  document.querySelectorAll('#presets button').forEach(b => b.classList.remove('active'));
+}
+function toggleFull() {
+  const el = $('stageWrap');
+  if (document.fullscreenElement) document.exitFullscreen();
+  else el.requestFullscreen?.();
+}
+$('btnHit').addEventListener('click', manualHit);
+$('btnStop').addEventListener('click', stopAll);
+$('btnFull').addEventListener('click', toggleFull);
+
+// トグル
+document.querySelectorAll('[data-hit]').forEach(el => el.addEventListener('change', () => { S.hit[el.dataset.hit] = el.checked; }));
+document.querySelectorAll('[data-amb]').forEach(el => el.addEventListener('change', () => { S.amb[el.dataset.amb] = el.checked; }));
+$('hudToggle').addEventListener('change', e => { $('hud').style.display = e.target.checked ? '' : 'none'; });
+
+// スライダー類
+function bindRange(id, outId, fmt, apply) {
+  const el = $(id), out = $(outId);
+  const fn = () => { const v = parseFloat(el.value); out.textContent = fmt(v); apply(v); };
+  el.addEventListener('input', fn); fn();
+}
+bindRange('pInt', 'oInt', v => v.toFixed(2), v => { S.intensity = v; });
+bindRange('pBpm', 'oBpm', v => String(v), v => { S.bpm = v; });
+bindRange('pAccel', 'oAccel', v => v + 's', v => { S.accelDur = v; });
+bindRange('pSoft', 'oSoft', v => v.toFixed(2), v => { S.softness = v; });
+bindRange('pVol', 'oVol', v => String(Math.round(v * 100)), v => { S.volume = v; if (SND.master) SND.master.gain.value = v; });
+bindRange('pSens', 'oSens', v => v.toFixed(2), v => {
+  S.sensitivity = v;
+  for (const it of SND.list) it.onsets = detect(it.env, it.frameDt, v);
+  renderSounds(); renderSoundSelect(); drawWave();
+});
+$('pMotion').addEventListener('change', e => { S.motion = e.target.value; cam.x.reset(); cam.y.reset(); });
+$('pFlash').addEventListener('change', e => { S.flashColor = e.target.value; });
+$('pSound').addEventListener('change', e => { S.sound = e.target.value; });
+const applyWords = () => { S.words = $('pWords').value.split(/[,、]/).map(s => s.trim()).filter(Boolean); };
+$('pWords').addEventListener('input', applyWords); applyWords();
+
+// ステージクリックで中心点
+cvs.addEventListener('click', e => {
+  const r = cvs.getBoundingClientRect();
+  S.focus.x = clamp((e.clientX - r.left) / r.width, 0, 1);
+  S.focus.y = clamp((e.clientY - r.top) / r.height, 0, 1);
+  fx.focusMarker = 1.2;
+});
+
+// キーボード
+addEventListener('keydown', e => {
+  if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
+  if (e.target instanceof HTMLSelectElement) return;
+  if (e.code === 'Space' && e.target instanceof HTMLInputElement && e.target.type === 'checkbox') return;
+  const map = { '1': 'single', '2': 'triple', '3': 'loop', '4': 'irregular', '5': 'accel', '6': 'afterglow', '7': 'syncOne', '8': 'syncChain' };
+  if (e.code === 'Space') { e.preventDefault(); manualHit(); }
+  else if (map[e.key]) runPreset(map[e.key]);
+  else if (e.key === 'Escape') stopAll();
+  else if (e.key === 'h' || e.key === 'H') { const t = $('hudToggle'); t.checked = !t.checked; t.dispatchEvent(new Event('change')); }
+  else if (e.key === 'f' || e.key === 'F') toggleFull();
+});
+
+// フォーカス中のボタンが Space で押されないようにする（Space はヒット専用）
+addEventListener('keyup', e => { if (e.code === 'Space' && e.target instanceof HTMLButtonElement) e.preventDefault(); });
+
+fitStage();
+drawWave();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
